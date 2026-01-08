@@ -1,0 +1,9 @@
+# Development dependencies for CI/CD
+# Note: Runtime dependencies (torch, torchvision, numpy, pillow) are provided by ComfyUI
+# and are not needed for basic syntax/structure validation
+
+pytest>=7.0.0
+pytest-cov>=4.0.0
+black>=23.0.0
+flake8>=6.0.0
+mypy>=1.0.0

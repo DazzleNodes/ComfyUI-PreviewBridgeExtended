@@ -1,0 +1,64 @@
+#!/bin/bash
+#
+# Post-checkout hook for DazzleNodes projects
+# Restores private-only files (CLAUDE.md, instructions) when switching to non-private branches
+#
+# Arguments from git:
+#   $1 - ref of previous HEAD
+#   $2 - ref of new HEAD
+#   $3 - flag: 1 = branch checkout, 0 = file checkout
+
+# Only run on branch switches, not file checkouts
+if [ "$3" != "1" ]; then
+    exit 0
+fi
+
+# Find the repository root
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+BRANCH=$(git branch --show-current)
+
+# Only restore on non-private branches
+if [ "$BRANCH" = "private" ]; then
+    exit 0
+fi
+
+# Check if private branch exists
+if ! git show-ref --verify --quiet refs/heads/private; then
+    echo "Note: private branch not found, skipping file restore"
+    exit 0
+fi
+
+echo "Restoring private files from private branch..."
+
+# Restore CLAUDE.md from private branch
+if git show private:CLAUDE.md > /dev/null 2>&1; then
+    git show private:CLAUDE.md > "$REPO_ROOT/CLAUDE.md" 2>/dev/null
+    echo "  ✓ Restored CLAUDE.md"
+fi
+
+# Restore instruction files from private branch
+INSTRUCTIONS_DIR="$REPO_ROOT/private/claude/instructions"
+mkdir -p "$INSTRUCTIONS_DIR"
+
+# List of instruction files to restore (common DazzleNodes instruction files)
+INSTRUCTION_FILES=(
+    "step1_context_rebuilder.md"
+    "step2_dev_workflow_process.md"
+    "step3_context_bridge.md"
+)
+
+restored_count=0
+for file in "${INSTRUCTION_FILES[@]}"; do
+    if git show "private:private/claude/instructions/$file" > /dev/null 2>&1; then
+        git show "private:private/claude/instructions/$file" > "$INSTRUCTIONS_DIR/$file" 2>/dev/null
+        ((restored_count++))
+    fi
+done
+
+if [ $restored_count -gt 0 ]; then
+    echo "  ✓ Restored $restored_count instruction file(s)"
+fi
+
+echo "Private files restored from private branch"
+
+exit 0
