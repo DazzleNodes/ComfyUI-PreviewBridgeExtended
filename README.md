@@ -15,6 +15,15 @@ ComfyUI's IMAGE type is RGB-only (3 channels) - alpha channels are separated to 
 2. Allowing users to select how input masks interact with MaskEditor drawings
 3. Properly detecting empty masks for blocking decisions
 
+## Background
+
+This node extends the Preview Bridge concept from [ComfyUI-Impact-Pack](https://github.com/ltdrdata/ComfyUI-Impact-Pack). We've contributed minimal fixes to the original node via PRs:
+
+- [PR #1172](https://github.com/ltdrdata/ComfyUI-Impact-Pack/pull/1172) - Fix for current MaskEditor compatibility
+- [PR #1009](https://github.com/ltdrdata/ComfyUI-Impact-Pack/pull/1009) - Earlier fix contribution
+
+Since Impact-Pack maintains a conservative approach to major changes, we're developing extended features (two-layer mask editing, editor target modes, instant preview refresh) in this standalone node. This allows us to iterate quickly while keeping the upstream PRs focused on essential fixes.
+
 ## Features
 
 - **Optional Mask Input**: Accept masks from upstream nodes alongside MaskEditor drawings
