@@ -22,7 +22,7 @@ This node extends the Preview Bridge concept from [ComfyUI-Impact-Pack](https://
 - [PR #1172](https://github.com/ltdrdata/ComfyUI-Impact-Pack/pull/1172) - Fix for current MaskEditor compatibility
 - [PR #1009](https://github.com/ltdrdata/ComfyUI-Impact-Pack/pull/1009) - Earlier fix contribution
 
-Since Impact-Pack maintains a conservative approach to major changes, we're developing extended features (two-layer mask editing, editor target modes, instant preview refresh) in this standalone node. This allows us to iterate quickly while keeping the upstream PRs focused on essential fixes.
+Since Impact-Pack maintains a conservative approach to major changes, this repo was created to develop extended features (two-layer mask editing, editor target modes, instant preview refresh) in this standalone node or as a part of the [DazzleNodes pack](https://github.com/DazzleNodes/DazzleNodes). This allows for more rapid iteration, while keeping the upstream PRs focused on essential fixes.
 
 ## Features
 
