@@ -2,7 +2,8 @@
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![ComfyUI Registry](https://img.shields.io/badge/ComfyUI-Registry-green.svg)](https://registry.comfy.org/publishers/djdarcy/nodes/DazzleNodes)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![GitHub release](https://img.shields.io/github/v/release/DazzleNodes/ComfyUI-PreviewBridgeExtended?include_prereleases&label=version)](https://github.com/DazzleNodes/ComfyUI-PreviewBridgeExtended/releases)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
 Enhanced Preview Bridge node with optional mask input support. Extends the Preview Bridge concept with configurable mask source selection and proper empty mask detection.
 
@@ -161,16 +162,18 @@ Contributions welcome! Please:
 3. Test changes in ComfyUI
 4. Submit a pull request
 
-## License
+Like the project?
 
-Preview Bridge Extended, Copyright (C) 2026 Dustin Darcy
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+[!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/djdarcy)
 
 ## Acknowledgements
 
-Part of the [DazzleNodes](https://github.com/DazzleNodes/DazzleNodes) collection.
+Part of the [DazzleNodes](https://github.com/DazzleNodes) collection.
 
 Inspired by:
 - [ComfyUI-Impact-Pack](https://github.com/ltdrdata/ComfyUI-Impact-Pack) Preview Bridge node
 - [WAS Node Suite](https://github.com/WASasquatch/was-node-suite-comfyui) mask combination patterns
+
+## License
+
+This project is licensed under the GNU General Public License v3.0 - see the [LICENSE](LICENSE) file for details.
