@@ -349,10 +349,18 @@ class PreviewBridgeExtended:
 
         # Store original input mask IMMUTABLY for delta computation
         # This is the reference for computing what user added vs preserved
-        # Only update when images change (new workflow run) or not cached yet
-        if images_changed or unique_id not in _preview_bridge_original_input_cache:
+        # Update when: images change, upstream mask changes, or not cached yet
+        cached_original = _preview_bridge_original_input_cache.get(unique_id)
+        upstream_mask_changed = upstream_input_valid and (
+            cached_original is None or
+            cached_original.shape != upstream_input_mask.shape or
+            not torch.equal(cached_original, upstream_input_mask)
+        )
+
+        if images_changed or upstream_mask_changed or unique_id not in _preview_bridge_original_input_cache:
             if upstream_input_valid:
                 _preview_bridge_original_input_cache[unique_id] = upstream_input_mask.clone()
+                logging.debug(f"[PreviewBridgeExtended] Updated original_input_cache for {unique_id} (images_changed={images_changed}, mask_changed={upstream_mask_changed})")
             elif unique_id in _preview_bridge_original_input_cache:
                 del _preview_bridge_original_input_cache[unique_id]
             # Clear delta caches on new input
