@@ -27,12 +27,13 @@ Since Impact-Pack maintains a conservative approach to major changes, this repo 
 ## Features
 
 - **Optional Mask Input**: Accept masks from upstream nodes alongside MaskEditor drawings
-- **Configurable Mask Source**: Choose between combined, input_mask, or mask_editor modes
+- **Configurable Mask Output**: Choose between combined, input_mask, or mask_editor modes
+- **Two-Layer Visualization**: Red tint for input mask, orange tint for editor mask
 - **Mask Restoration**: Persist masks across image changes (never, always, if_same_size)
 - **Smart Empty Detection**: Detects placeholder masks (64x64) and all-zero masks
 - **Mask Combination**: OR (union) combination of multiple mask sources
 - **Flexible Blocking**: Block on empty mask or always (debugging backstop)
-- **Preview Display**: Visual overlay showing masked areas with red tint
+- **Preview Display**: Visual overlay showing masked areas with distinct colors
 - **Debug Info Output**: Detailed information about mask processing state
 
 ## Prerequisites
@@ -67,17 +68,30 @@ Then restart ComfyUI or use **Manager → Refresh Node Definitions**.
 |-------|------|----------|-------------|
 | images | IMAGE | Yes | Input image(s) |
 | mask_opt | MASK | No | Optional mask from upstream (LoadImage, SAM, etc.) |
-| mask_source | Selection | No | How to determine final mask (default: combined) |
+| mask_output | Selection | No | What goes to output mask slot (default: combined) |
+| editor_target | Selection | No | Which layer MaskEditor affects (default: combined) |
 | restore_mask | Selection | No | Mask restoration mode (default: never) |
 | block | Selection | No | Blocking mode (default: never) |
 
-### Mask Source Options
+### Mask Output Options
+
+Controls what goes to the OUTPUT mask slot:
 
 | Option | Behavior |
 |--------|----------|
-| `combined` | OR (union) combine input_mask + restored/editor mask |
-| `input_mask` | Only use input mask, ignore restored mask |
-| `mask_editor` | Only use restored/cached mask, ignore input mask |
+| `combined` | OR (union) combine input_mask + editor mask |
+| `input_mask` | Only output the input mask layer |
+| `mask_editor` | Only output the editor mask layer |
+
+### Editor Target Options
+
+Controls which layer MaskEditor affects:
+
+| Option | Behavior |
+|--------|----------|
+| `combined` | Edit both input + editor masks together (default) |
+| `mask_editor` | Only edit editor mask (input mask shown as red, locked) |
+| `input_mask` | Only edit input mask (editor mask shown as orange, locked) |
 
 ### Restore Mask Options
 
@@ -92,39 +106,42 @@ Then restart ComfyUI or use **Manager → Refresh Node Definitions**.
 | Option | Behavior |
 |--------|----------|
 | `never` | Never block execution (default) |
-| `if_empty_mask` | Block when result mask is empty |
+| `if_empty_mask` | Block when OUTPUT mask is empty |
+| `if_empty_editor` | Block if user hasn't drawn in MaskEditor |
 | `always` | Always block execution (debugging backstop) |
 
 ### Outputs
 
 - **image**: Pass-through of input image
-- **mask**: Final processed mask based on mask_source selection
+- **mask**: Final processed mask based on mask_output selection
 - **info**: Debug string showing mask processing details
 
 ### Common Use Cases
 
 #### 1. Combine LoadImage Mask with MaskEditor
 
-Connect LoadImage's MASK output to `mask_opt`, set `mask_source` to "combined":
+Connect LoadImage's MASK output to `mask_opt`, set `mask_output` to "combined":
 - Users can draw additional mask areas in MaskEditor
 - Both sources are combined using OR operation
+- Preview shows red (input) + orange (editor) overlays
 
 #### 2. Use Detection Node Masks
 
 Connect SAM or other detection node output:
-- Set `mask_source` to "input_mask" to use only the detection
+- Set `mask_output` to "input_mask" to use only the detection
 - Or "combined" to allow refinement with MaskEditor
+- Set `editor_target` to control which layer is editable
 
 #### 3. Fallback to MaskEditor Only
 
-Set `mask_source` to "mask_editor":
-- Ignores any input mask
+Set `mask_output` to "mask_editor":
+- Ignores any input mask for output
 - Uses only user-drawn masks from MaskEditor
 
 ## How It Works
 
 1. **Mask Detection**: Checks if input mask is valid (not None, not all zeros, not placeholder 64x64)
-2. **Source Selection**: Based on `mask_source`, determines which masks to use
+2. **Output Selection**: Based on `mask_output`, determines what goes to output slot
 3. **Combination**: For "combined" mode, uses OR operation (sum + clamp)
 4. **Resizing**: Automatically resizes masks to match image dimensions
 5. **Blocking**: If `block` enabled and final mask is empty, blocks execution
