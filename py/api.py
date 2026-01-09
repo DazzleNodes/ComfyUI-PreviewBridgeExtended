@@ -378,7 +378,17 @@ def prepare_for_editing(node_id: str, editor_target_override: str = None) -> Opt
     if editor_target == "combined" and cached_editor_target in ("mask_editor", "input_mask"):
         # We're switching from a decomposed mode back to combined
         # Reconstruct: combined = input_layer OR additions_layer
-        input_layer = input_mask if input_mask is not None else upstream_input_mask
+        #
+        # CRITICAL: Use cached_input_override if available - it contains the user's
+        # edits to the input layer (subtractions from upstream). Without this,
+        # subtractions made in input_mask mode are lost when switching to combined.
+        if cached_input_override is not None and not is_mask_empty(cached_input_override):
+            input_layer = cached_input_override
+            logging.info(f"[PreviewBridgeExtended] RE-COMPOSITION: using cached_input_override, "
+                        f"sum={cached_input_override.sum().item():.2f}")
+        else:
+            input_layer = input_mask if input_mask is not None else upstream_input_mask
+            logging.info(f"[PreviewBridgeExtended] RE-COMPOSITION: using fallback input_mask/upstream")
         additions_layer = cached_editor_mask
 
         if input_layer is not None and additions_layer is not None:

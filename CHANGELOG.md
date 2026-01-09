@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5-alpha] - 2026-01-09
+
+### Fixed
+- **RE-COMPOSITION Subtractions**: Fixed subtractions being lost when switching back to combined mode
+  - RE-COMPOSITION now uses `cached_input_override` (user's edited input with subtractions) instead of upstream
+  - Preserves subtractions made in `input_mask` mode when returning to `combined` mode
+
+### Known Issues
+- Complex multi-step mode sequences (3+ switches) may still lose some subtractions
+- Root cause: Subtractions not tracked as explicit layer - planned for Phase 1 LayerCache architecture
+
 ## [0.1.4-alpha] - 2026-01-09
 
 ### Changed
