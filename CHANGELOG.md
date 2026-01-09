@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3-alpha] - 2026-01-09
+
+### Fixed
+- **Stale Clipspace Data**: Fixed output errors when switching between `editor_target` modes
+  - `mask_editor/mask_editor`: Now computes delta (additions only) instead of returning stale combined data
+  - `mask_editor/input_mask`: Now computes delta from editor_cache instead of returning stale combined data
+  - `input_mask/combined`: Falls back to upstream when intersection is empty (stale additions-only clipspace)
+  - Root cause: Clipspace file persists across mode changes, containing incompatible data for new mode
+
+### Added
+- Diagnostic logging in `process()` for widget values and final mask computation
+- Diagnostic logging for all `mask_editor/*` delta computations
+- JS now passes current widget values to `refresh-preview` API (prevents stale cache usage)
+
+### Changed
+- All `mask_output=mask_editor` combinations now compute delta (additions only)
+  - Ensures output contains only user additions, not stale combined state from previous modes
+- Updated 9-combination matrix documentation to reflect delta computation for all mask_editor outputs
+
+### Known Issues
+- Cache architecture needs refactoring (see GitHub issue #2)
+- Widget changes don't trigger preview refresh (no ComfyUI widget change events)
+
 ## [0.1.2-alpha] - 2026-01-09
 
 ### Added

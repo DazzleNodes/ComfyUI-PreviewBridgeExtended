@@ -322,6 +322,11 @@ class PreviewBridgeExtended:
         batch, height, width, channels = images.shape
         target_size = (height, width)
 
+        # DIAGNOSTIC: Log widget values received by process()
+        logging.info(f"[PreviewBridgeExtended] process() called: unique_id={unique_id}")
+        logging.info(f"[PreviewBridgeExtended] process() WIDGETS: mask_output='{mask_output}', "
+                     f"editor_target='{editor_target}', restore_mask='{restore_mask}', block='{block}'")
+
         # Detect if images have changed
         images_changed = self._detect_images_changed(images, unique_id)
 
@@ -441,6 +446,16 @@ class PreviewBridgeExtended:
             editor_cache=editor_cache,
             target_size=target_size
         )
+
+        # DIAGNOSTIC: Log final mask determination
+        logging.info(f"[PreviewBridgeExtended] process() MASK INPUTS: "
+                     f"upstream_valid={upstream_input_valid}, editor_valid={editor_mask_valid}, "
+                     f"input_override_valid={input_override_valid}, editor_cache_valid={editor_cache is not None}")
+        if final_mask is not None:
+            logging.info(f"[PreviewBridgeExtended] process() FINAL MASK: shape={final_mask.shape}, "
+                         f"sum={final_mask.sum().item():.2f}")
+        else:
+            logging.info(f"[PreviewBridgeExtended] process() FINAL MASK: None")
 
         # Create empty mask if none available
         if final_mask is None:
@@ -706,8 +721,11 @@ class PreviewBridgeExtended:
         | input_mask   | mask_editor   | upstream (immutable)            |
         | input_mask   | input_mask    | input_override (user's edits)   |
         | mask_editor  | combined      | additions (delta from upstream) |
-        | mask_editor  | mask_editor   | editor_mask                     |
-        | mask_editor  | input_mask    | editor_cache (preserved)        |
+        | mask_editor  | mask_editor   | additions (delta from upstream) |
+        | mask_editor  | input_mask    | additions from editor_cache (delta) |
+
+        NOTE: For all mask_editor outputs, we compute delta (additions only) because
+        the clipspace file may contain combined state from a previous mode session.
 
         Args:
             mask_output: What to output ("combined", "input_mask", "mask_editor")
@@ -751,7 +769,23 @@ class PreviewBridgeExtended:
                 # Return intersection: what's in BOTH clipspace AND upstream
                 # This preserves user's subtractions from upstream while ignoring additions
                 if editor_mask_valid and upstream_mask_valid:
-                    return self._combine_masks_and(editor_mask, upstream_mask, target_size)
+                    intersection = self._combine_masks_and(editor_mask, upstream_mask, target_size)
+                    # Check if intersection is empty/near-empty - this can happen when
+                    # clipspace contains additions-only data from a previous mask_editor mode
+                    # (additions are areas NOT in upstream, so AND gives ~0)
+                    if intersection is None or self._is_mask_empty(intersection):
+                        editor_sum = editor_mask.sum().item()
+                        upstream_sum = upstream_mask.sum().item()
+                        logging.info(f"[PreviewBridgeExtended] input_mask/combined: intersection empty, "
+                                    f"editor_sum={editor_sum:.2f}, upstream_sum={upstream_sum:.2f}")
+                        # Fall back to upstream if intersection is empty but upstream is valid
+                        # This handles stale clipspace from different mode
+                        return upstream_mask
+                    intersection_sum = intersection.sum().item()
+                    upstream_sum = upstream_mask.sum().item()
+                    logging.info(f"[PreviewBridgeExtended] input_mask/combined: intersection computed, "
+                                f"intersection_sum={intersection_sum:.2f}, upstream_sum={upstream_sum:.2f}")
+                    return intersection
                 # If no edits, return upstream; if no upstream, return None
                 return upstream_mask if upstream_mask_valid else None
 
@@ -782,12 +816,43 @@ class PreviewBridgeExtended:
                 return additions
 
             elif editor_target == "mask_editor":
-                # User editing editor layer: return their editor mask directly
-                return editor_mask if editor_mask_valid else None
+                # User editing editor layer: return their editor mask
+                # BUT: editor_mask may contain combined state from previous mode
+                # (clipspace file persists across mode changes), so compute delta
+                if not editor_mask_valid:
+                    return None
+                if not upstream_mask_valid:
+                    # No upstream to delta against, return full editor_mask
+                    logging.info(f"[PreviewBridgeExtended] mask_editor/mask_editor: no upstream, returning full editor_mask")
+                    return editor_mask
+                # Compute additions: areas in editor_mask but NOT in upstream
+                # This extracts only the true editor additions
+                _, additions, _ = self._compute_mask_delta(upstream_mask, editor_mask, target_size)
+                editor_sum = editor_mask.sum().item() if editor_mask is not None else 0
+                additions_sum = additions.sum().item() if additions is not None else 0
+                logging.info(f"[PreviewBridgeExtended] mask_editor/mask_editor: computed delta, "
+                            f"editor_sum={editor_sum:.2f}, additions_sum={additions_sum:.2f}")
+                return additions
 
             elif editor_target == "input_mask":
                 # User editing input layer: return preserved editor from cache
-                return editor_cache if editor_cache_valid else None
+                # BUT: if cache contains combined state from previous mode, we need
+                # to compute delta to extract only the editor additions
+                if not editor_cache_valid:
+                    logging.info(f"[PreviewBridgeExtended] mask_editor/input_mask: no editor_cache, returning None")
+                    return None
+                if not upstream_mask_valid:
+                    # No upstream to delta against, return full cache
+                    logging.info(f"[PreviewBridgeExtended] mask_editor/input_mask: no upstream, returning full cache")
+                    return editor_cache
+                # Compute additions: areas in editor_cache but NOT in upstream
+                # This handles the case where editor_cache contains combined state
+                _, additions, _ = self._compute_mask_delta(upstream_mask, editor_cache, target_size)
+                cache_sum = editor_cache.sum().item() if editor_cache is not None else 0
+                additions_sum = additions.sum().item() if additions is not None else 0
+                logging.info(f"[PreviewBridgeExtended] mask_editor/input_mask: computed delta, "
+                            f"cache_sum={cache_sum:.2f}, additions_sum={additions_sum:.2f}")
+                return additions
 
         return None
 
@@ -1368,7 +1433,12 @@ class PreviewBridgeExtended:
 
 
 # API helper function for JS-Python preview refresh
-def generate_preview_for_api(node_id: str, clipspace_path: str) -> Optional[Dict[str, Any]]:
+def generate_preview_for_api(
+    node_id: str,
+    clipspace_path: str,
+    mask_output_override: str = None,
+    editor_target_override: str = None
+) -> Optional[Dict[str, Any]]:
     """
     Generate a colored preview image for a given node using cached context.
 
@@ -1378,6 +1448,8 @@ def generate_preview_for_api(node_id: str, clipspace_path: str) -> Optional[Dict
     Args:
         node_id: The unique_id of the node
         clipspace_path: Path to the clipspace file with updated editor mask
+        mask_output_override: Current mask_output from JS widget (overrides cached value)
+        editor_target_override: Current editor_target from JS widget (overrides cached value)
 
     Returns:
         Dict with 'success', 'image_path', 'image_data' (base64) or 'error'
@@ -1398,8 +1470,9 @@ def generate_preview_for_api(node_id: str, clipspace_path: str) -> Optional[Dict
     original_input_mask = context.get('original_input_mask')  # Immutable reference for delta
     cached_input_override = context.get('input_override')
     cached_editor_mask = context.get('editor_mask')
-    mask_output = context.get('mask_output', 'combined')
-    editor_target = context.get('editor_target', 'mask_editor')
+    # Use overrides from JS if provided, otherwise fall back to cached values
+    mask_output = mask_output_override if mask_output_override else context.get('mask_output', 'combined')
+    editor_target = editor_target_override if editor_target_override else context.get('editor_target', 'mask_editor')
 
     if images is None:
         return {
@@ -1415,7 +1488,8 @@ def generate_preview_for_api(node_id: str, clipspace_path: str) -> Optional[Dict
     target_size = (height, width)
 
     logging.info(f"[PreviewBridgeExtended API] refresh-preview called: node_id={node_id}, "
-                 f"mask_output={mask_output}, editor_target={editor_target}")
+                 f"mask_output={mask_output} (override={mask_output_override is not None}), "
+                 f"editor_target={editor_target} (override={editor_target_override is not None})")
     logging.info(f"[PreviewBridgeExtended API] clipspace_path={clipspace_path}, "
                  f"clipspace_loaded={clipspace_mask is not None}")
 

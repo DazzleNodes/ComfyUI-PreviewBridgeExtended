@@ -24,13 +24,20 @@ try:
         """
         API endpoint to refresh the colored preview after MaskEditor save.
 
-        POST body: {"node_id": "123", "clipspace_path": "clipspace/file.png [input]"}
+        POST body: {
+            "node_id": "123",
+            "clipspace_path": "clipspace/file.png [input]",
+            "mask_output": "combined",  # optional - current widget value
+            "editor_target": "combined"  # optional - current widget value
+        }
         Returns: {"success": true, "image_data": "data:image/png;base64,..."}
         """
         try:
             data = await request.json()
             node_id = data.get('node_id')
             clipspace_path = data.get('clipspace_path')
+            mask_output = data.get('mask_output')  # Optional override from JS
+            editor_target = data.get('editor_target')  # Optional override from JS
 
             if not node_id:
                 return web.json_response({
@@ -45,7 +52,11 @@ try:
                 }, status=400)
 
             # Generate the colored preview
-            result = generate_preview_for_api(str(node_id), clipspace_path)
+            result = generate_preview_for_api(
+                str(node_id), clipspace_path,
+                mask_output_override=mask_output,
+                editor_target_override=editor_target
+            )
 
             if result.get('success'):
                 return web.json_response(result)

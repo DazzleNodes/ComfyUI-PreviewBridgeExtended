@@ -345,6 +345,12 @@ async function importComfyCore() {
                                         // Call Python API to get colored preview (no workflow re-run!)
                                         // This generates the red/orange tinted preview server-side
                                         try {
+                                            // Get current widget values (not stale cache)
+                                            const maskOutputWidget = node.widgets.find(w => w.name === 'mask_output');
+                                            const editorTargetWidget = node.widgets.find(w => w.name === 'editor_target');
+                                            const currentMaskOutput = maskOutputWidget ? maskOutputWidget.value : 'combined';
+                                            const currentEditorTarget = editorTargetWidget ? editorTargetWidget.value : 'combined';
+
                                             const apiResponse = await fetch('/preview-bridge-extended/refresh-preview', {
                                                 method: 'POST',
                                                 headers: {
@@ -352,7 +358,9 @@ async function importComfyCore() {
                                                 },
                                                 body: JSON.stringify({
                                                     node_id: node.id.toString(),
-                                                    clipspace_path: clipspacePath
+                                                    clipspace_path: clipspacePath,
+                                                    mask_output: currentMaskOutput,
+                                                    editor_target: currentEditorTarget
                                                 })
                                             });
 
