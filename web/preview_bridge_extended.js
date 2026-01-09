@@ -218,6 +218,8 @@ async function importComfyCore() {
 
                                 // Fallback: just call original callback
                                 console.log("[PreviewBridgeExtended] Falling back to original MaskEditor behavior");
+                                // Still set up close detection for cancel handling
+                                setupMaskEditorCloseDetection(node, imageWidget);
                                 if (originalCallback) {
                                     originalCallback();
                                 }
@@ -229,14 +231,28 @@ async function importComfyCore() {
 
             // Helper function to detect MaskEditor close and restore state on cancel
             function setupMaskEditorCloseDetection(node, imageWidget) {
-                // Use MutationObserver to detect when MaskEditor modal closes
+                console.log("[PreviewBridgeExtended] Setting up MaskEditor close detection");
+                // Use polling to detect when MaskEditor modal closes
+                // Track initial state to detect when dialog appears and disappears
+                let dialogWasOpen = false;
+
                 const checkInterval = setInterval(() => {
-                    // Look for ComfyUI's mask editor dialog
+                    // Look for ComfyUI's mask editor dialog - check multiple selectors
+                    // ComfyUI's MaskEditor typically uses a modal with canvas
                     const maskEditorDialog = document.querySelector('.comfy-modal-content canvas') ||
                                             document.querySelector('[class*="mask-editor"]') ||
-                                            document.querySelector('.graphdialog canvas');
+                                            document.querySelector('.graphdialog canvas') ||
+                                            document.querySelector('.comfy-modal canvas') ||
+                                            document.querySelector('[role="dialog"] canvas');
 
-                    if (!maskEditorDialog) {
+                    // Track when dialog first appears
+                    if (maskEditorDialog && !dialogWasOpen) {
+                        dialogWasOpen = true;
+                        console.log("[PreviewBridgeExtended] MaskEditor dialog detected");
+                    }
+
+                    // Only trigger close logic if dialog was previously open and now closed
+                    if (!maskEditorDialog && dialogWasOpen) {
                         clearInterval(checkInterval);
                         console.log("[PreviewBridgeExtended] MaskEditor closed, save detected:", node._pbeSaveDetected);
 
@@ -342,6 +358,12 @@ async function importComfyCore() {
 
                                             if (apiResponse.ok) {
                                                 const apiResult = await apiResponse.json();
+                                                console.log("[PreviewBridgeExtended] API response:", {
+                                                    success: apiResult.success,
+                                                    hasImageData: !!apiResult.image_data,
+                                                    imageDataLength: apiResult.image_data ? apiResult.image_data.length : 0,
+                                                    error: apiResult.error
+                                                });
                                                 if (apiResult.success && apiResult.image_data) {
                                                     // Update preview with colored version from Python
                                                     const previewImg = new Image();
@@ -353,6 +375,17 @@ async function importComfyCore() {
                                                             app.graph.setDirtyCanvas(true, true);
                                                         }
                                                         console.log("[PreviewBridgeExtended] Preview updated with colored overlay (API refresh)");
+                                                    };
+                                                    previewImg.onerror = (e) => {
+                                                        console.error("[PreviewBridgeExtended] Failed to load preview image:", e);
+                                                        // Fallback: show MaskEditor's version
+                                                        const fallbackImg = new Image();
+                                                        fallbackImg.onload = () => {
+                                                            node._imgs = [fallbackImg];
+                                                            node.imageIndex = 0;
+                                                            node.setDirtyCanvas(true, true);
+                                                        };
+                                                        fallbackImg.src = src;
                                                     };
                                                     previewImg.src = apiResult.image_data;
                                                 } else {

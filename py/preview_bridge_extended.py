@@ -89,14 +89,14 @@ class PreviewBridgeExtended:
             "optional": {
                 "mask_opt": ("MASK",),  # Optional mask from upstream
                 "mask_output": (
-                    ["combined", "input_mask", "mask_editor"],
+                    ["combined", "mask_editor", "input_mask"],
                     {
                         "default": "combined",
                         "tooltip": (
                             "Controls what goes to the OUTPUT mask slot.\n"
                             "combined: OR combine input_mask + mask_editor drawings\n"
-                            "input_mask: Only output the input mask layer\n"
-                            "mask_editor: Only output the editor mask layer\n\n"
+                            "mask_editor: Only output the editor mask layer\n"
+                            "input_mask: Only output the input mask layer\n\n"
                             "Preview displays the selected output mode (WYSIWYG)."
                         )
                     }
@@ -423,16 +423,22 @@ class PreviewBridgeExtended:
             input_mask = upstream_input_mask
         input_mask_valid = not self._is_mask_empty(input_mask)
 
-        # Determine final output mask based on mask_output setting
-        # IMPORTANT: Use upstream_input_mask (immutable) for input layer, not input_mask
-        # (which may be contaminated by editor content when editor_target=combined)
+        # Get editor cache for 9-combination matrix (preserved editor when editing input layer)
+        # This is separate from editor_mask which varies based on editor_target
+        editor_cache = _preview_bridge_editor_mask_cache.get(unique_id)
+
+        # Determine final output mask based on mask_output and editor_target
+        # Implements the full 9-combination matrix for predictable behavior
         final_mask = self._determine_final_mask(
             mask_output=mask_output,
-            editor_target=editor_target,  # Pass editor_target for combined mode handling
-            input_mask=upstream_input_mask,  # Use immutable upstream reference
-            input_mask_valid=upstream_input_valid,
-            restored_mask=editor_mask,
-            restored_mask_valid=editor_mask_valid,
+            editor_target=editor_target,
+            upstream_mask=upstream_input_mask,  # Immutable upstream reference
+            upstream_mask_valid=upstream_input_valid,
+            editor_mask=editor_mask,
+            editor_mask_valid=editor_mask_valid,
+            input_override=input_override,
+            input_override_valid=input_override_valid,
+            editor_cache=editor_cache,
             target_size=target_size
         )
 
@@ -488,8 +494,19 @@ class PreviewBridgeExtended:
             preview_input_mask = upstream_input_mask if upstream_input_valid else None
             preview_editor_mask = editor_mask
         elif mask_output == "input_mask":
-            # Only show input mask (reddish) - use upstream for correct color
-            preview_input_mask = upstream_input_mask if upstream_input_valid else input_mask
+            # Preview should match what OUTPUT produces
+            # Must account for editor_target to show correct modified input
+            if editor_target == "combined" and upstream_input_valid and input_override_valid:
+                # When editor_target=combined, erasures tracked via intersection
+                preview_input_mask = self._combine_masks_and(upstream_input_mask, input_override, target_size)
+                if preview_input_mask is None:
+                    preview_input_mask = upstream_input_mask
+            elif editor_target == "input_mask" and input_override_valid:
+                # When editor_target=input_mask, user directly edited input layer
+                preview_input_mask = input_override
+            else:
+                # editor_target=mask_editor means input wasn't edited, use upstream
+                preview_input_mask = upstream_input_mask if upstream_input_valid else input_mask
         elif mask_output == "mask_editor":
             # Only show editor mask (orange)
             preview_editor_mask = editor_mask
@@ -665,54 +682,112 @@ class PreviewBridgeExtended:
         self,
         mask_output: str,
         editor_target: str,
-        input_mask: Optional[torch.Tensor],
-        input_mask_valid: bool,
-        restored_mask: Optional[torch.Tensor],
-        restored_mask_valid: bool,
+        upstream_mask: Optional[torch.Tensor],
+        upstream_mask_valid: bool,
+        editor_mask: Optional[torch.Tensor],
+        editor_mask_valid: bool,
+        input_override: Optional[torch.Tensor],
+        input_override_valid: bool,
+        editor_cache: Optional[torch.Tensor],
         target_size: Tuple[int, int]
     ) -> Optional[torch.Tensor]:
         """
-        Determine final mask based on mask_output setting.
+        Determine final mask based on mask_output and editor_target settings.
 
-        mask_output controls what goes to the OUTPUT mask slot:
-        - combined: When editor_target=combined, use editor_mask directly (includes erasures).
-                    Otherwise OR combine input_mask + editor mask.
-        - input_mask: Use only input_mask (original from mask_opt)
-        - mask_editor: Use only editor ADDITIONS (what user drew beyond input)
+        This implements the full 9-combination matrix (3 mask_output × 3 editor_target).
+
+        9-Combination Matrix:
+        | mask_output  | editor_target | Output Logic                    |
+        |--------------|---------------|---------------------------------|
+        | combined     | combined      | editor_mask (complete state)    |
+        | combined     | mask_editor   | upstream OR editor_mask         |
+        | combined     | input_mask    | input_override OR editor_cache  |
+        | input_mask   | combined      | editor_mask AND upstream (intersection) |
+        | input_mask   | mask_editor   | upstream (immutable)            |
+        | input_mask   | input_mask    | input_override (user's edits)   |
+        | mask_editor  | combined      | additions (delta from upstream) |
+        | mask_editor  | mask_editor   | editor_mask                     |
+        | mask_editor  | input_mask    | editor_cache (preserved)        |
 
         Args:
             mask_output: What to output ("combined", "input_mask", "mask_editor")
             editor_target: Which layer MaskEditor affects ("combined", "mask_editor", "input_mask")
-            input_mask: The upstream input mask (immutable reference)
-            input_mask_valid: Whether input_mask is valid/non-empty
-            restored_mask: The editor mask from clipspace
-            restored_mask_valid: Whether editor mask is valid/non-empty
+            upstream_mask: The immutable upstream input mask from mask_opt
+            upstream_mask_valid: Whether upstream_mask is valid/non-empty
+            editor_mask: The editor mask from clipspace (current edits)
+            editor_mask_valid: Whether editor_mask is valid/non-empty
+            input_override: User's modifications to the input layer
+            input_override_valid: Whether input_override is valid/non-empty
+            editor_cache: Preserved editor mask from cache (when editing input layer)
             target_size: (height, width) for resizing
         """
+        editor_cache_valid = editor_cache is not None and not self._is_mask_empty(editor_cache)
+
+        # =========================================
+        # mask_output = "combined"
+        # =========================================
         if mask_output == "combined":
-            if editor_target == "combined" and restored_mask_valid:
+            if editor_target == "combined":
                 # Combined editing: editor_mask IS the final merged state (with erasures)
-                # User edits both layers as one, so clipspace contains the complete picture
-                return restored_mask
-            # Separate layer editing: OR combine the layers
-            return self._combine_masks_or(input_mask, restored_mask, target_size)
+                if editor_mask_valid:
+                    return editor_mask
+                # Fall back to upstream if no edits yet
+                return upstream_mask if upstream_mask_valid else None
 
+            elif editor_target == "mask_editor":
+                # Separate layer editing: OR combine upstream + editor
+                return self._combine_masks_or(upstream_mask, editor_mask, target_size)
+
+            elif editor_target == "input_mask":
+                # User editing input layer: OR combine input_override + cached editor
+                return self._combine_masks_or(input_override, editor_cache, target_size)
+
+        # =========================================
+        # mask_output = "input_mask"
+        # =========================================
         elif mask_output == "input_mask":
-            # Only output original input mask
-            return input_mask if input_mask_valid else None
+            if editor_target == "combined":
+                # User edited both layers merged, but wants only "input" portion
+                # Return intersection: what's in BOTH clipspace AND upstream
+                # This preserves user's subtractions from upstream while ignoring additions
+                if editor_mask_valid and upstream_mask_valid:
+                    return self._combine_masks_and(editor_mask, upstream_mask, target_size)
+                # If no edits, return upstream; if no upstream, return None
+                return upstream_mask if upstream_mask_valid else None
 
+            elif editor_target == "mask_editor":
+                # User editing editor layer only: return immutable upstream
+                return upstream_mask if upstream_mask_valid else None
+
+            elif editor_target == "input_mask":
+                # User editing input layer: return their modified input
+                if input_override_valid:
+                    return input_override
+                # Fall back to upstream if no modifications yet
+                return upstream_mask if upstream_mask_valid else None
+
+        # =========================================
+        # mask_output = "mask_editor"
+        # =========================================
         elif mask_output == "mask_editor":
-            # Only output editor ADDITIONS (areas user drew that weren't in input)
-            # When editor_target=combined, restored_mask contains the merged state,
-            # so we compute the delta to extract just the additions
-            if not restored_mask_valid:
-                return None
-            if not input_mask_valid:
-                # No input mask, so all of restored_mask is "additions"
-                return restored_mask
-            # Compute delta: additions = areas in restored but NOT in input
-            _, additions, _ = self._compute_mask_delta(input_mask, restored_mask, target_size)
-            return additions
+            if editor_target == "combined":
+                # User edited both layers merged, but wants only "additions"
+                # Compute delta: areas in editor_mask but NOT in upstream
+                if not editor_mask_valid:
+                    return None
+                if not upstream_mask_valid:
+                    # No upstream, so all of editor_mask is "additions"
+                    return editor_mask
+                _, additions, _ = self._compute_mask_delta(upstream_mask, editor_mask, target_size)
+                return additions
+
+            elif editor_target == "mask_editor":
+                # User editing editor layer: return their editor mask directly
+                return editor_mask if editor_mask_valid else None
+
+            elif editor_target == "input_mask":
+                # User editing input layer: return preserved editor from cache
+                return editor_cache if editor_cache_valid else None
 
         return None
 
@@ -839,6 +914,47 @@ class PreviewBridgeExtended:
             combined = torch.sum(torch.stack(masks_to_combine, dim=0), dim=0)
             combined = torch.clamp(combined, 0, 1)
             return combined
+
+    def _combine_masks_and(
+        self,
+        mask1: Optional[torch.Tensor],
+        mask2: Optional[torch.Tensor],
+        target_size: Tuple[int, int]
+    ) -> Optional[torch.Tensor]:
+        """
+        Combine two masks using AND operation (intersection).
+
+        Uses torch.min() for soft mask intersection, which preserves feathering
+        and antialiasing. This is the fuzzy logic AND operation.
+
+        Args:
+            mask1: First mask tensor (can be None)
+            mask2: Second mask tensor (can be None)
+            target_size: (height, width) to resize masks to
+
+        Returns:
+            Intersection mask tensor, or None if either input is None/empty
+        """
+        # AND requires both masks to have content
+        if mask1 is None or self._is_mask_empty(mask1):
+            return None
+        if mask2 is None or self._is_mask_empty(mask2):
+            return None
+
+        # Resize both to target size
+        m1 = self._resize_mask(mask1, target_size)
+        m2 = self._resize_mask(mask2, target_size)
+
+        # Match batch sizes
+        if m1.shape[0] != m2.shape[0]:
+            if m1.shape[0] == 1:
+                m1 = m1.expand(m2.shape[0], -1, -1)
+            elif m2.shape[0] == 1:
+                m2 = m2.expand(m1.shape[0], -1, -1)
+
+        # Soft intersection using min (fuzzy AND)
+        intersection = torch.min(m1, m2)
+        return intersection
 
     def _compute_mask_delta(
         self,
@@ -1099,17 +1215,31 @@ class PreviewBridgeExtended:
                     alpha = 1.0 - input_m
 
             elif editor_target == "combined":
-                # Both masks are editable - no RGB baking needed
-                # Use CURRENT state (editor_m has user's modifications including erasures)
+                # When editor_target=combined, editor_m IS the complete combined state
+                # (user can add AND erase), not just additions to overlay on original.
+                # Do NOT OR with original - that would restore erased areas.
+
+                # Debug logging for combined mode
+                logging.info(f"[PreviewBridgeExtended] for_editing=combined: "
+                            f"original_m={original_m is not None}, input_m={input_m is not None}, "
+                            f"editor_m={editor_m is not None}")
+
                 if editor_m is not None:
-                    # User has made edits - editor_m reflects current state
+                    # Use editor_m directly - it already has the complete combined state
                     alpha = 1.0 - editor_m
+                    logging.info(f"[PreviewBridgeExtended] Using editor_m directly: sum={editor_m.sum().item():.2f}")
                 elif original_m is not None:
-                    # No edits yet - original input mask is editable
+                    # No edits yet - use original as starting point
                     alpha = 1.0 - original_m
+                    logging.info(f"[PreviewBridgeExtended] No editor_m, using original_m: sum={original_m.sum().item():.2f}")
                 elif input_m is not None:
-                    # Fallback to input_m
                     alpha = 1.0 - input_m
+                    logging.info(f"[PreviewBridgeExtended] No editor_m/original_m, using input_m: sum={input_m.sum().item():.2f}")
+                else:
+                    logging.info(f"[PreviewBridgeExtended] No masks available for combined mode")
+
+                logging.info(f"[PreviewBridgeExtended] Final alpha: min={alpha.min().item():.4f}, "
+                            f"max={alpha.max().item():.4f}, transparent_pixels={(alpha < 1.0).sum().item()}")
 
             rgba[:, :, :, 3] = alpha
             return rgba
@@ -1280,8 +1410,27 @@ def generate_preview_for_api(node_id: str, clipspace_path: str) -> Optional[Dict
     # Load the new clipspace mask from MaskEditor
     clipspace_mask = PreviewBridgeExtended.load_mask_from_clipspace(clipspace_path)
 
+    # Get image dimensions for mask operations
+    batch, height, width, channels = images.shape
+    target_size = (height, width)
+
+    logging.info(f"[PreviewBridgeExtended API] refresh-preview called: node_id={node_id}, "
+                 f"mask_output={mask_output}, editor_target={editor_target}")
+    logging.info(f"[PreviewBridgeExtended API] clipspace_path={clipspace_path}, "
+                 f"clipspace_loaded={clipspace_mask is not None}")
+
     # Create a temporary instance to use helper methods
     pbe = PreviewBridgeExtended()
+
+    clipspace_valid = clipspace_mask is not None and not pbe._is_mask_empty(clipspace_mask)
+    logging.info(f"[PreviewBridgeExtended API] clipspace_valid={clipspace_valid}")
+
+    if clipspace_mask is not None:
+        mask_sum = clipspace_mask.sum().item()
+        mask_max = clipspace_mask.max().item()
+        mask_min = clipspace_mask.min().item()
+        logging.info(f"[PreviewBridgeExtended API] clipspace stats: sum={mask_sum:.2f}, "
+                     f"min={mask_min:.4f}, max={mask_max:.4f}, shape={clipspace_mask.shape}")
 
     # Route clipspace edits based on editor_target (same logic as process method)
     editor_mask = None
@@ -1317,7 +1466,26 @@ def generate_preview_for_api(node_id: str, clipspace_path: str) -> Optional[Dict
         preview_input_mask = upstream_input_mask if upstream_valid else None
         preview_editor_mask = editor_mask
     elif mask_output == "input_mask":
-        preview_input_mask = upstream_input_mask if upstream_valid else input_mask
+        # Preview should match what OUTPUT will produce
+        # Must account for editor_target to show correct modified input
+        if editor_target == "combined" and upstream_valid and input_override is not None:
+            # When editor_target=combined, erasures from input are tracked via intersection
+            # Output will be: min(upstream, clipspace) - areas in BOTH
+            preview_input_mask = pbe._combine_masks_and(upstream_input_mask, input_override, target_size)
+            if preview_input_mask is None:
+                preview_input_mask = upstream_input_mask
+            logging.info(f"[PreviewBridgeExtended API] input_mask preview using AND intersection: "
+                        f"sum={preview_input_mask.sum().item():.2f}")
+        elif editor_target == "input_mask" and input_override is not None and not pbe._is_mask_empty(input_override):
+            # When editor_target=input_mask, user directly edited input layer
+            preview_input_mask = input_override
+            logging.info(f"[PreviewBridgeExtended API] input_mask preview using input_override: "
+                        f"sum={preview_input_mask.sum().item():.2f}")
+        else:
+            # editor_target=mask_editor means input wasn't edited, use upstream
+            preview_input_mask = upstream_input_mask if upstream_valid else input_mask
+            logging.info(f"[PreviewBridgeExtended API] input_mask preview using upstream: "
+                        f"sum={preview_input_mask.sum().item() if preview_input_mask is not None else 0:.2f}")
     elif mask_output == "mask_editor":
         preview_editor_mask = editor_mask
 
@@ -1378,6 +1546,10 @@ def generate_preview_for_api(node_id: str, clipspace_path: str) -> Optional[Dict
     if node_id in _preview_bridge_context_cache:
         _preview_bridge_context_cache[node_id]['editor_mask'] = editor_mask
         _preview_bridge_context_cache[node_id]['input_override'] = input_override
+
+    logging.info(f"[PreviewBridgeExtended API] Successfully generated preview: "
+                 f"has_input={not input_empty}, has_editor={not editor_empty}, "
+                 f"image_size={len(img_base64)} bytes")
 
     return {
         'success': True,
@@ -1444,12 +1616,32 @@ def prepare_for_editing(node_id: str, editor_target_override: str = None) -> Opt
     # Use the original input mask (immutable) or fall back to upstream
     input_mask = original_input_mask if original_input_mask is not None else upstream_input_mask
 
-    # Log mask info
+    # Log mask info with detailed stats for debugging
     input_empty = pbe._is_mask_empty(input_mask)
     editor_empty = pbe._is_mask_empty(cached_editor_mask)
     original_empty = pbe._is_mask_empty(original_input_mask)
     logging.info(f"[PreviewBridgeExtended] Masks: input_empty={input_empty}, "
                  f"editor_empty={editor_empty}, original_empty={original_empty}")
+
+    # Detailed mask stats for debugging editor_target=combined issue
+    def log_mask_stats(name: str, mask):
+        if mask is None:
+            logging.info(f"[PreviewBridgeExtended] {name}: None")
+        else:
+            logging.info(f"[PreviewBridgeExtended] {name}: shape={mask.shape}, "
+                        f"sum={mask.sum().item():.2f}, min={mask.min().item():.4f}, "
+                        f"max={mask.max().item():.4f}")
+
+    log_mask_stats("input_mask", input_mask)
+    log_mask_stats("cached_editor_mask", cached_editor_mask)
+    log_mask_stats("original_input_mask", original_input_mask)
+    log_mask_stats("upstream_input_mask", upstream_input_mask)
+
+    # Also log cached context keys for debugging
+    cached_mask_output = context.get('mask_output', 'N/A')
+    cached_editor_target = context.get('editor_target', 'N/A')
+    logging.info(f"[PreviewBridgeExtended] Context cache: mask_output={cached_mask_output}, "
+                 f"editor_target(cached)={cached_editor_target}, editor_target(override)={editor_target_override}")
 
     # Generate image with for_editing=True
     # This puts the appropriate masks in alpha based on editor_target

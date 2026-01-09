@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2-alpha] - 2026-01-09
+
+### Added
+- `_combine_masks_and()` helper method using `torch.min()` for soft mask intersection
+  - Preserves feathering and antialiasing (fuzzy logic AND operation)
+- Test images for development workflow (`tests/test-920x1022.jpg`, `tests/test-920x1022_clipspace-masked.png`)
+
+### Fixed
+- **9-Combination Matrix**: All 9 combinations of `mask_output` × `editor_target` now behave predictably
+  - `input_mask + input_mask`: Returns user's modified input (`input_override`) instead of ignoring edits
+  - `combined + input_mask`: Returns `input_override OR editor_cache` (both layers combined correctly)
+  - `input_mask + combined`: Returns intersection (`editor_mask AND upstream`) using `torch.min()`
+    - Preserves user's subtractions from upstream while ignoring additions outside upstream area
+- **MaskEditor Loading**: Fixed erasures being restored when reopening MaskEditor in combined mode
+  - For `editor_target=combined`, editor_m now used directly (not OR'd with original)
+  - Erasures are properly preserved across MaskEditor sessions
+- **Preview Generation**: Fixed `mask_output=input_mask` preview not showing erasures
+  - Preview now uses intersection (AND) when `editor_target=combined`
+  - Preview matches actual output for all `editor_target` modes
+- Added comprehensive docstring documenting the full 9-combination matrix in `_determine_final_mask()`
+
+### Changed
+- Widget option ordering now consistent: both `mask_output` and `editor_target` use
+  `[combined, mask_editor, input_mask]` order
+
+### Technical Details
+- Validated architecture through Collaborate3 expert consultation with Gemini 2.5 Pro
+- Phase 1 of phased implementation approach (Phase 2: MaskState dataclass refactor planned)
+- Added diagnostic logging for debugging mask states
+
 ## [0.1.1-alpha] - 2026-01-08
 
 ### Added
