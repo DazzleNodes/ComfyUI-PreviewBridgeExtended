@@ -8,7 +8,7 @@
  * - Processing MaskEditor save (imgs setter)
  */
 
-import { prepareForEdit, refreshPreview, uploadImage, dataUriToBlob } from './api.js';
+import { prepareForEdit, refreshPreview, getPreview, uploadImage, dataUriToBlob } from './api.js';
 
 
 /**
@@ -62,17 +62,35 @@ export function setupMaskEditorCloseDetection(node, imageWidget, app) {
             clearInterval(checkInterval);
             console.log("[PreviewBridgeExtended] MaskEditor closed, save detected:", node._pbeSaveDetected);
 
-            // If save wasn't detected, restore original state
+            // If save wasn't detected, restore correct state
             if (!node._pbeSaveDetected && node._pbeOriginalWidgetValue !== null) {
-                console.log("[PreviewBridgeExtended] Cancel detected, restoring original display state");
+                console.log("[PreviewBridgeExtended] Cancel detected, restoring state");
                 imageWidget.value = node._pbeOriginalWidgetValue;
-                if (node._pbeOriginalImgs) {
-                    node._imgs = node._pbeOriginalImgs;
-                }
-                node.setDirtyCanvas(true, true);
-                if (app.graph) {
-                    app.graph.setDirtyCanvas(true, true);
-                }
+
+                // Call Python API to get correct preview from LayerCache
+                const { maskOutput, editorTarget } = getWidgetValues(node);
+                getPreview(node.id.toString(), maskOutput, editorTarget).then(result => {
+                    if (result.success && result.image_data) {
+                        const previewImg = new Image();
+                        previewImg.onload = () => {
+                            node._imgs = [previewImg];
+                            node.imageIndex = 0;
+                            node.setDirtyCanvas(true, true);
+                            if (app.graph) {
+                                app.graph.setDirtyCanvas(true, true);
+                            }
+                            console.log("[PreviewBridgeExtended] Preview restored after Cancel");
+                        };
+                        previewImg.src = result.image_data;
+                    } else {
+                        console.warn("[PreviewBridgeExtended] Failed to get preview after Cancel:", result.error);
+                        // Just trigger canvas refresh anyway
+                        node.setDirtyCanvas(true, true);
+                    }
+                }).catch(e => {
+                    console.warn("[PreviewBridgeExtended] Error getting preview after Cancel:", e);
+                    node.setDirtyCanvas(true, true);
+                });
             }
 
             // Clear saved state

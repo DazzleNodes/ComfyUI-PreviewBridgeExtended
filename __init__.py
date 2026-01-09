@@ -5,7 +5,7 @@ Enhanced Preview Bridge with optional mask input support.
 Part of the DazzleNodes collection - standalone ComfyUI custom nodes.
 """
 
-from .py import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS, generate_preview_for_api, prepare_for_editing
+from .py import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS, generate_preview_for_api, get_preview_for_api, prepare_for_editing
 from .version import __version__
 
 # Tell ComfyUI where to find our JavaScript files
@@ -108,6 +108,53 @@ try:
             }, status=500)
 
     print("[PreviewBridgeExtended] Registered API endpoint: /preview-bridge-extended/prepare-for-edit")
+
+    @server.PromptServer.instance.routes.post("/preview-bridge-extended/get-preview")
+    async def get_preview_api(request):
+        """
+        API endpoint to get current preview from LayerCache state.
+
+        Used by Cancel handler to restore correct preview after MaskEditor closes
+        without saving. Unlike refresh-preview, this doesn't decompose a new clipspace.
+
+        POST body: {
+            "node_id": "123",
+            "mask_output": "combined",  # optional - current widget value
+            "editor_target": "combined"  # optional - current widget value
+        }
+        Returns: {"success": true, "image_data": "data:image/png;base64,..."}
+        """
+        try:
+            data = await request.json()
+            node_id = data.get('node_id')
+            mask_output = data.get('mask_output')
+            editor_target = data.get('editor_target')
+
+            if not node_id:
+                return web.json_response({
+                    'success': False,
+                    'error': 'No node_id provided'
+                }, status=400)
+
+            # Generate preview from existing LayerCache state
+            result = get_preview_for_api(
+                str(node_id),
+                mask_output_override=mask_output,
+                editor_target_override=editor_target
+            )
+
+            if result.get('success'):
+                return web.json_response(result)
+            else:
+                return web.json_response(result, status=400)
+
+        except Exception as e:
+            return web.json_response({
+                'success': False,
+                'error': str(e)
+            }, status=500)
+
+    print("[PreviewBridgeExtended] Registered API endpoint: /preview-bridge-extended/get-preview")
 
 except Exception as e:
     print(f"[PreviewBridgeExtended] Warning: Could not register API endpoint: {e}")

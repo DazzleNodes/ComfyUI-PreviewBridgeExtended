@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0-alpha] - 2026-01-09
+
+### Added
+- **Instant Preview Refresh**: Preview now updates immediately when changing `mask_output` or `editor_target` widgets (fixes #1)
+  - No longer requires re-running workflow to see preview changes
+  - Widget change listeners call `get-preview` API to regenerate preview from LayerCache state
+- **get-preview API**: New endpoint `/preview-bridge-extended/get-preview` for fetching current preview without clipspace decomposition
+  - Used by Cancel handler and widget change listeners
+  - Returns preview based on current LayerCache state and widget values
+- **VS Code Debug Configs**: Added ComfyUI debugging configurations to `.vscode/launch.json`
+  - "ComfyUI: Debug This Node" - Launch ComfyUI with debugger attached
+  - "ComfyUI: Attach to Running" - Attach to running ComfyUI instance
+  - Uses `COMFYUI_PATH` environment variable for portability
+
+### Changed
+- **Full LayerCache Migration**: Removed all legacy dual-cache code
+  - LayerCache is now the exclusive storage system
+  - Removed `_preview_bridge_input_mask_cache` and `_preview_bridge_editor_mask_cache`
+  - Simplified `node.py`, `api.py`, and `preview.py` to use LayerCache exclusively
+- **Removed Delta Mode**: Eliminated obsolete delta computation from `preview.py`
+  - Delta mode was incompatible with LayerCache architecture
+  - Preview now uses direct layer display (input_mask as red, editor_mask as orange)
+  - Simplified `apply_mask_overlays()` function
+
+### Fixed
+- **Widget Switch Preview Bug**: Fixed preview not updating when switching between modes
+  - Root cause: Widget changes didn't trigger preview refresh (only workflow execution did)
+  - Solution: Added widget callbacks that call `getPreview` API
+- **Cancel Handler**: MaskEditor Cancel now correctly restores preview from LayerCache state
+  - Previously could show stale preview after cancelling
+- **GitHub Workflows**: Fixed workflow names from "Fit Mask to Image" to "Preview Bridge Extended"
+  - Updated `main.yml` CI workflow name
+  - Updated `publish-to-registry.yml` workflow name and repo URL
+- **Issue Templates**: Fixed project name in bug report and feature request templates
+
+### Technical Details
+- See `private/claude/2026-01-09__06-05-13__widget-switch-preview-refresh.md` for widget listener implementation
+- See `private/claude/2026-01-09__05-51-13__preview-delta-mode-bug.md` for delta mode removal analysis
+
 ## [0.2.0-alpha] - 2026-01-09
 
 ### Added

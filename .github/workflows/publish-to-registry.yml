@@ -8,7 +8,7 @@ on:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    name: Publish Fit Mask to Image to Registry
+    name: Publish Preview Bridge Extended to Registry
 
     steps:
       - name: Check Out Repo
@@ -35,6 +35,6 @@ jobs:
 # 1. Update MAJOR, MINOR, PATCH in version.py (git hooks will update __version__)
 # 2. Commit and push to main branch
 # 3. Create a git tag: git tag v0.1.0 && git push origin v0.1.0
-# 4. Go to: https://github.com/DazzleNodes/fit-mask-to-image/actions/workflows/publish-to-registry.yml
+# 4. Go to: https://github.com/DazzleNodes/ComfyUI-PreviewBridgeExtended/actions/workflows/publish-to-registry.yml
 # 5. Click "Run workflow" → Select branch → Run workflow
 # 6. This manual step prevents accidental publishing of every commit

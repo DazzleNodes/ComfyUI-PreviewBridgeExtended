@@ -343,3 +343,35 @@ def get_output_mask(node_id: str, mask_output: str) -> Optional[torch.Tensor]:
         return cache.get_input_mask()
 
     return None
+
+
+def get_preview_masks(node_id: str, mask_output: str) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor]]:
+    """
+    Get (input_mask, editor_mask) for preview display.
+
+    Returns the appropriate masks to display based on mask_output:
+    - combined: Show upstream (red) + additions (orange)
+    - input_mask: Show input layer only (red)
+    - mask_editor: Show additions only (orange)
+
+    Args:
+        node_id: The node's unique ID
+        mask_output: Which output mode ("combined", "mask_editor", "input_mask")
+
+    Returns:
+        Tuple of (input_mask, editor_mask) for preview overlay
+    """
+    cache = get_layer_cache(node_id)
+
+    if mask_output == "combined":
+        # Show both layers: input (with subtractions) as red, additions as orange
+        # IMPORTANT: Use get_input_mask() not upstream, so subtractions are visible!
+        return (cache.get_input_mask(), cache.additions)
+    elif mask_output == "input_mask":
+        # Show only input layer (with subtractions applied)
+        return (cache.get_input_mask(), None)
+    elif mask_output == "mask_editor":
+        # Show only additions layer
+        return (None, cache.additions)
+
+    return (None, None)

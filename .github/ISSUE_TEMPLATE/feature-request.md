@@ -1,6 +1,6 @@
 ---
 name: Feature request
-about: Suggest an idea for Fit Mask to Image
+about: Suggest an idea for Preview Bridge Extended
 title: "[FEATURE] "
 labels: enhancement
 assignees: ''

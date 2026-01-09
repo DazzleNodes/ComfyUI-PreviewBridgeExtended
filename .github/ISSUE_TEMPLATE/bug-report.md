@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Create a report to help improve Fit Mask to Image
+about: Create a report to help improve Preview Bridge Extended
 title: "[BUG] "
 labels: bug
 assignees: ''

@@ -9,7 +9,7 @@ import torch
 from typing import Tuple, Optional
 import nodes
 
-from .mask_ops import is_mask_empty, resize_mask, compute_mask_delta
+from .mask_ops import is_mask_empty, resize_mask
 
 
 def save_preview_images(
@@ -25,9 +25,9 @@ def save_preview_images(
     """
     Save preview images with mask overlays to temp folder.
 
-    Shows two distinct colors using delta-based coloring when original_mask provided:
-    - Reddish tint: preserved areas (original mask_opt still present)
-    - Orange tint: additions (new areas user drew)
+    Shows two distinct colors:
+    - Reddish tint: input_mask layer (upstream - subtractions)
+    - Orange tint: editor_mask layer (additions)
 
     Args:
         images: Input images [B, H, W, C]
@@ -35,7 +35,7 @@ def save_preview_images(
         editor_mask: Editor mask tensor [B, H, W] or None
         editor_target: Which layer is editable ("mask_editor", "input_mask", "combined")
         unique_id: Node unique ID
-        original_mask: Immutable original mask_opt for delta computation
+        original_mask: Original mask_opt (used for for_editing mode, not display)
         prompt: ComfyUI prompt data
         extra_pnginfo: Extra PNG info
 
@@ -81,28 +81,22 @@ def apply_mask_overlays(
     """
     Apply mask overlays with distinct colors for visual feedback.
 
-    Two-layer delta system:
-    When original_mask is provided, we compute delta to distinguish:
-    - Preserved areas (in original AND current): Red tint, alpha=1 (opaque)
-    - Additions (in current but NOT original): Orange tint, alpha=0 (transparent)
-    - Subtractions (in original but NOT current): No color (erased)
-
-    When original_mask is None (initial display, no edits yet):
-    - input_mask: Red tint, alpha=1 (opaque, for display only)
-    - editor_mask: Orange tint, alpha=0 (editable)
+    Two-layer system (LayerCache architecture):
+    - input_mask: Red tint, alpha=1 (opaque) - current input state
+    - editor_mask: Orange tint, alpha=0 (transparent) - additions layer
 
     for_editing mode:
-    When True, puts ALL editable content into alpha for MaskEditor.
-    NO RGB tinting is applied - just original image with proper alpha.
+    When True, puts the editable content into alpha for MaskEditor.
+    Non-editable layers are baked as RGB tint.
     Used by prepare-for-edit API before opening MaskEditor.
 
     Args:
         images: RGB images [B, H, W, 3]
-        input_mask: Input mask tensor [B, H, W] or None
-        editor_mask: Editor mask tensor [B, H, W] or None
-        editor_target: Controls alpha for editing mode
-        original_mask: Immutable original mask_opt for delta computation
-        for_editing: If True, prepare image for MaskEditor (all editable in alpha)
+        input_mask: Input mask tensor [B, H, W] or None (get_input_mask())
+        editor_mask: Editor mask tensor [B, H, W] or None (additions)
+        editor_target: Controls which layer goes in alpha for editing mode
+        original_mask: Original mask_opt (for for_editing fallbacks)
+        for_editing: If True, prepare image for MaskEditor
 
     Returns:
         RGBA images [B, H, W, 4] with appropriate colors and alpha
@@ -141,36 +135,24 @@ def apply_mask_overlays(
     rgba[:, :, :, :3] = images.clone()
 
     # for_editing mode: Bake NON-editable masks as RGB, put EDITABLE mask in alpha
+    # With LayerCache, masks are already properly separated - no delta calculation needed.
     if for_editing:
         # Start with fully opaque alpha
         alpha = torch.ones((batch, height, width), dtype=images.dtype, device=images.device)
 
-        # Compute delta if we have both original and editor masks
-        # This separates "preserved" (from original) vs "additions" (user-drawn)
-        preserved = None
-        additions = None
-        if original_m is not None and editor_m is not None:
-            preserved, additions, _ = compute_mask_delta(
-                original_m, editor_m, target_size
-            )
-
         if editor_target == "mask_editor":
             # Only editor additions are editable (NOT preserved input areas)
-            # Bake input mask (original/preserved) as RED RGB (visible but not editable)
-            input_to_bake = original_m if original_m is not None else input_m
+            # Bake input mask as RED RGB (visible but not editable)
+            # IMPORTANT: Use input_m (current state with subtractions), not original_m
+            input_to_bake = input_m if input_m is not None else original_m
             if input_to_bake is not None:
                 blend = input_to_bake * 0.5
                 rgba[:, :, :, 0] = rgba[:, :, :, 0] * (1 - blend) + 1.0 * blend
                 rgba[:, :, :, 1] = rgba[:, :, :, 1] * (1 - blend) + 0.2 * blend
                 rgba[:, :, :, 2] = rgba[:, :, :, 2] * (1 - blend) + 0.2 * blend
 
-            # Put ONLY additions in alpha (user-drawn areas, not preserved input)
-            if additions is not None:
-                additions_p = prepare_mask(additions)
-                if additions_p is not None:
-                    alpha = 1.0 - additions_p
-            elif editor_m is not None and original_m is None:
-                # No original, all of editor_m is additions
+            # Put editor_m (additions) in alpha - api.py already passes layer_cache.additions
+            if editor_m is not None:
                 alpha = 1.0 - editor_m
             # If no editor mask yet, alpha stays 1.0 (user draws new content)
 
@@ -225,69 +207,28 @@ def apply_mask_overlays(
         return rgba
 
     # DISPLAY MODE: Apply RGB tinting for visual distinction
+    # With LayerCache, masks are already properly separated:
+    #   - input_m = current input state (upstream - subtractions) -> RED
+    #   - editor_m = additions layer -> ORANGE
 
-    # Determine if we should use delta-based coloring
-    # Delta mode: we have original AND editor edits (can compute what was preserved vs added)
-    use_delta = original_m is not None and editor_m is not None
+    # Apply input mask (reddish tint: R=1.0, G=0.2, B=0.2)
+    if input_m is not None:
+        blend_input = input_m * 0.5  # 50% blend in masked areas
+        rgba[:, :, :, 0] = rgba[:, :, :, 0] * (1 - blend_input) + 1.0 * blend_input
+        rgba[:, :, :, 1] = rgba[:, :, :, 1] * (1 - blend_input) + 0.2 * blend_input
+        rgba[:, :, :, 2] = rgba[:, :, :, 2] * (1 - blend_input) + 0.2 * blend_input
 
-    if use_delta:
-        # Delta-based coloring: distinguish preserved vs additions
-        # Compute delta components
-        preserved, additions, subtractions = compute_mask_delta(
-            original_m, editor_m, target_size
-        )
+    # Apply editor mask (orange tint: R=1.0, G=0.5, B=0.0)
+    if editor_m is not None:
+        blend_editor = editor_m * 0.5  # 50% blend in masked areas
+        rgba[:, :, :, 0] = rgba[:, :, :, 0] * (1 - blend_editor) + 1.0 * blend_editor
+        rgba[:, :, :, 1] = rgba[:, :, :, 1] * (1 - blend_editor) + 0.5 * blend_editor
+        rgba[:, :, :, 2] = rgba[:, :, :, 2] * (1 - blend_editor) + 0.0 * blend_editor
 
-        # Apply preserved areas (red tint: R=1.0, G=0.2, B=0.2)
-        # These are areas from the original mask_opt that user kept
-        if preserved is not None:
-            preserved_p = prepare_mask(preserved)
-            if preserved_p is not None:
-                blend = preserved_p * 0.5
-                rgba[:, :, :, 0] = rgba[:, :, :, 0] * (1 - blend) + 1.0 * blend
-                rgba[:, :, :, 1] = rgba[:, :, :, 1] * (1 - blend) + 0.2 * blend
-                rgba[:, :, :, 2] = rgba[:, :, :, 2] * (1 - blend) + 0.2 * blend
-
-        # Apply additions (orange tint: R=1.0, G=0.5, B=0.0)
-        # These are new areas user drew that weren't in original
-        if additions is not None:
-            additions_p = prepare_mask(additions)
-            if additions_p is not None:
-                blend = additions_p * 0.5
-                rgba[:, :, :, 0] = rgba[:, :, :, 0] * (1 - blend) + 1.0 * blend
-                rgba[:, :, :, 1] = rgba[:, :, :, 1] * (1 - blend) + 0.5 * blend
-                rgba[:, :, :, 2] = rgba[:, :, :, 2] * (1 - blend) + 0.0 * blend
-
-        # Subtractions: no color needed, user erased these areas
-
-        # Alpha channel for display mode:
-        # - Preserved areas: alpha=1 (opaque, no ComfyUI overlay, shows red RGB)
-        # - Additions: alpha=0 (transparent, gets ComfyUI orange overlay)
-        alpha = torch.ones((batch, height, width), dtype=images.dtype, device=images.device)
-        if additions is not None:
-            additions_p = prepare_mask(additions)
-            if additions_p is not None:
-                alpha = alpha * (1.0 - additions_p)  # Make additions transparent
-
-    else:
-        # Non-delta mode: original behavior for initial display
-        # Apply input mask (reddish tint: R=1.0, G=0.2, B=0.2)
-        if input_m is not None:
-            blend_input = input_m * 0.5  # 50% blend in masked areas
-            rgba[:, :, :, 0] = rgba[:, :, :, 0] * (1 - blend_input) + 1.0 * blend_input
-            rgba[:, :, :, 1] = rgba[:, :, :, 1] * (1 - blend_input) + 0.2 * blend_input
-            rgba[:, :, :, 2] = rgba[:, :, :, 2] * (1 - blend_input) + 0.2 * blend_input
-
-        # Apply editor mask (orange tint: R=1.0, G=0.5, B=0.0)
-        if editor_m is not None:
-            blend_editor = editor_m * 0.5  # 50% blend in masked areas
-            rgba[:, :, :, 0] = rgba[:, :, :, 0] * (1 - blend_editor) + 1.0 * blend_editor
-            rgba[:, :, :, 1] = rgba[:, :, :, 1] * (1 - blend_editor) + 0.5 * blend_editor
-            rgba[:, :, :, 2] = rgba[:, :, :, 2] * (1 - blend_editor) + 0.0 * blend_editor
-
-        # Alpha: input_mask is opaque (for red display), editor_mask is transparent
-        alpha = torch.ones((batch, height, width), dtype=images.dtype, device=images.device)
-        if editor_m is not None:
-            alpha = 1.0 - editor_m
+    # Alpha: input_mask is opaque (for red display), editor_mask is transparent
+    alpha = torch.ones((batch, height, width), dtype=images.dtype, device=images.device)
+    if editor_m is not None:
+        alpha = 1.0 - editor_m
 
     rgba[:, :, :, 3] = alpha
 

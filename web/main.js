@@ -20,6 +20,8 @@ import {
     setupMaskEditorCloseDetection
 } from './maskeditor.js';
 
+import { getPreview } from './api.js';
+
 
 // Dynamic import helper for standalone vs nested extension compatibility
 async function importComfyCore() {
@@ -30,6 +32,67 @@ async function importComfyCore() {
 
     const appModule = await import(`${prefix}scripts/app.js`);
     return { app: appModule.app };
+}
+
+
+/**
+ * Get current widget values from node.
+ *
+ * @param {object} node - ComfyUI node
+ * @returns {{maskOutput: string, editorTarget: string}}
+ */
+function getWidgetValues(node) {
+    const maskOutputWidget = node.widgets?.find(w => w.name === 'mask_output');
+    const editorTargetWidget = node.widgets?.find(w => w.name === 'editor_target');
+
+    return {
+        maskOutput: maskOutputWidget?.value || 'combined',
+        editorTarget: editorTargetWidget?.value || 'combined'
+    };
+}
+
+
+/**
+ * Refresh preview when display widgets change.
+ *
+ * Called when mask_output or editor_target widgets change value.
+ * Fetches new preview from Python API with current LayerCache state.
+ *
+ * @param {object} node - ComfyUI node
+ * @param {object} app - ComfyUI app instance
+ */
+async function refreshPreviewOnWidgetChange(node, app) {
+    const { maskOutput, editorTarget } = getWidgetValues(node);
+
+    console.log(`[PreviewBridgeExtended] Widget changed, refreshing preview: mask_output=${maskOutput}, editor_target=${editorTarget}`);
+
+    try {
+        const result = await getPreview(node.id.toString(), maskOutput, editorTarget);
+
+        if (result.success && result.image_data) {
+            const previewImg = new Image();
+            previewImg.onload = () => {
+                node._imgs = [previewImg];
+                node.imageIndex = 0;
+                node.setDirtyCanvas(true, true);
+                if (app.graph) {
+                    app.graph.setDirtyCanvas(true, true);
+                }
+                console.log("[PreviewBridgeExtended] Preview refreshed after widget change");
+            };
+            previewImg.onerror = () => {
+                console.warn("[PreviewBridgeExtended] Failed to load preview image after widget change");
+            };
+            previewImg.src = result.image_data;
+        } else if (result.error) {
+            // Don't warn on "no context cache" - just means workflow hasn't run yet
+            if (!result.error.includes('No context cache')) {
+                console.warn("[PreviewBridgeExtended] Failed to refresh preview:", result.error);
+            }
+        }
+    } catch (e) {
+        console.warn("[PreviewBridgeExtended] Error refreshing preview on widget change:", e);
+    }
 }
 
 
@@ -53,6 +116,31 @@ function setupPreviewBridgeExtendedNode(node, app) {
     // Initialize image storage
     node._imgs = [new Image()];
     node.imageIndex = 0;
+
+    // Set up widget change listeners for preview refresh
+    // When mask_output or editor_target change, refresh preview from LayerCache
+    const maskOutputWidget = node.widgets.find(w => w.name === 'mask_output');
+    const editorTargetWidget = node.widgets.find(w => w.name === 'editor_target');
+
+    if (maskOutputWidget) {
+        const origMaskOutputCallback = maskOutputWidget.callback;
+        maskOutputWidget.callback = async (value) => {
+            if (origMaskOutputCallback) {
+                origMaskOutputCallback.call(maskOutputWidget, value);
+            }
+            await refreshPreviewOnWidgetChange(node, app);
+        };
+    }
+
+    if (editorTargetWidget) {
+        const origEditorTargetCallback = editorTargetWidget.callback;
+        editorTargetWidget.callback = async (value) => {
+            if (origEditorTargetCallback) {
+                origEditorTargetCallback.call(editorTargetWidget, value);
+            }
+            await refreshPreviewOnWidgetChange(node, app);
+        };
+    }
 
     // Hook into onExecuted to handle widget value updates
     // This replaces Object.defineProperty approach which fails on

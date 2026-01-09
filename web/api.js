@@ -136,6 +136,52 @@ export async function uploadImage(blob, filename, subfolder, type) {
 
 
 /**
+ * Get current preview from LayerCache state (no clipspace decomposition).
+ * Used for Cancel handling to restore correct preview.
+ *
+ * @param {string} nodeId - Node unique ID
+ * @param {string} maskOutput - Current mask_output widget value
+ * @param {string} editorTarget - Current editor_target widget value
+ * @returns {Promise<{success: boolean, image_data?: string, error?: string}>}
+ */
+export async function getPreview(nodeId, maskOutput, editorTarget) {
+    console.log("[PreviewBridgeExtended API] getPreview called:", {
+        nodeId, maskOutput, editorTarget
+    });
+
+    try {
+        const response = await fetch('/preview-bridge-extended/get-preview', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                node_id: nodeId.toString(),
+                mask_output: maskOutput,
+                editor_target: editorTarget
+            })
+        });
+
+        if (response.ok) {
+            const result = await response.json();
+            console.log("[PreviewBridgeExtended API] getPreview result:", {
+                success: result.success,
+                hasImageData: !!result.image_data,
+                error: result.error
+            });
+            return result;
+        } else {
+            console.warn("[PreviewBridgeExtended API] getPreview failed:", response.status);
+            return { success: false, error: `HTTP ${response.status}` };
+        }
+    } catch (e) {
+        console.warn("[PreviewBridgeExtended API] getPreview exception:", e);
+        return { success: false, error: e.message };
+    }
+}
+
+
+/**
  * Convert base64 data URI to Blob.
  *
  * @param {string} dataUri - Data URI string (data:image/png;base64,...)

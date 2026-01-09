@@ -1,7 +1,7 @@
 # ComfyUI Preview Bridge Extended
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![ComfyUI Registry](https://img.shields.io/badge/ComfyUI-Registry-green.svg)](https://registry.comfy.org/publishers/djdarcy/nodes/DazzleNodes)
+[![ComfyUI Registry](https://img.shields.io/badge/ComfyUI-Registry-green.svg)](https://registry.comfy.org/publishers/djdarcy/nodes/comfyui-preview-bridge-extended)
 [![GitHub release](https://img.shields.io/github/v/release/DazzleNodes/ComfyUI-PreviewBridgeExtended?include_prereleases&label=version)](https://github.com/DazzleNodes/ComfyUI-PreviewBridgeExtended/releases)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
@@ -29,6 +29,7 @@ Since Impact-Pack maintains a conservative approach to major changes, this repo 
 - **Optional Mask Input**: Accept masks from upstream nodes alongside MaskEditor drawings
 - **Configurable Mask Output**: Choose between combined, input_mask, or mask_editor modes
 - **Two-Layer Visualization**: Red tint for input mask, orange tint for editor mask
+- **Instant Preview Refresh**: Preview updates immediately when changing display mode widgets
 - **Mask Restoration**: Persist masks across image changes (never, always, if_same_size)
 - **Smart Empty Detection**: Detects placeholder masks (64x64) and all-zero masks
 - **Mask Combination**: OR (union) combination of multiple mask sources
@@ -148,6 +149,15 @@ Set `mask_output` to "mask_editor":
 
 ## Technical Details
 
+### LayerCache Architecture
+
+The node uses a unified `LayerCache` system for mask storage with three explicit layers:
+- **upstream**: Original mask from `mask_opt` input (immutable reference)
+- **additions**: User additions from MaskEditor
+- **subtractions**: User erasures/subtractions from original mask
+
+The "additions win" formula ensures predictable output: `combined = max(upstream - subtractions, additions)`
+
 ### Empty Mask Detection
 
 Masks are considered empty if:
@@ -161,6 +171,10 @@ Masks are considered empty if:
 combined = torch.sum(torch.stack(masks_to_combine, dim=0), dim=0)
 combined = torch.clamp(combined, 0, 1)
 ```
+
+### Instant Preview Refresh
+
+When `mask_output` or `editor_target` widgets change, JavaScript listeners trigger an API call to regenerate the preview from the current LayerCache state. This provides WYSIWYG behavior without re-running the workflow.
 
 ## Development
 

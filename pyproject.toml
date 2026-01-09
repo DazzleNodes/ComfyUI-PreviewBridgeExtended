@@ -1,0 +1,35 @@
+[project]
+name = "comfyui-preview-bridge-extended"
+description = "Enhanced Preview Bridge node for ComfyUI with LayerCache architecture, dual-layer mask editing, and instant preview refresh. Extends Impact Pack's Preview Bridge with optional MASK input, mode selection, and WYSIWYG preview display."
+version = "0.3.0"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+
+# No pip dependencies - all dependencies provided by ComfyUI
+dependencies = []
+
+# Optional development dependencies
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "black>=23.0.0",
+    "flake8>=6.0.0",
+    "mypy>=1.0.0",
+]
+
+[project.urls]
+Repository = "https://github.com/DazzleNodes/ComfyUI-PreviewBridgeExtended"
+Issues = "https://github.com/DazzleNodes/ComfyUI-PreviewBridgeExtended/issues"
+Changelog = "https://github.com/DazzleNodes/ComfyUI-PreviewBridgeExtended/releases"
+Documentation = "https://github.com/DazzleNodes/ComfyUI-PreviewBridgeExtended#readme"
+
+# ComfyUI Registry Configuration
+# See: https://docs.comfy.org/registry/publishing
+[tool.comfy]
+PublisherId = "djdarcy"
+DisplayName = "Preview Bridge Extended"
+Icon = ""
+
+# Publishing: Update version in this file and push to main branch
+# GitHub Actions will automatically publish to ComfyUI Registry

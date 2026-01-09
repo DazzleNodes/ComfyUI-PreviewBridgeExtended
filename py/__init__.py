@@ -21,6 +21,7 @@ from .node import (
 # Re-export API functions for route handlers
 from .api import (
     generate_preview_for_api,
+    get_preview_for_api,
     prepare_for_editing,
 )
 
@@ -48,6 +49,7 @@ from .layer_cache import (
     delete_layer_cache,
     decompose_and_store,
     get_output_mask,
+    get_preview_masks,
 )
 
 __all__ = [
@@ -57,6 +59,7 @@ __all__ = [
     'NODE_DISPLAY_NAME_MAPPINGS',
     # API
     'generate_preview_for_api',
+    'get_preview_for_api',
     'prepare_for_editing',
     # Utils
     'load_mask_from_clipspace',
@@ -75,4 +78,5 @@ __all__ = [
     'delete_layer_cache',
     'decompose_and_store',
     'get_output_mask',
+    'get_preview_masks',
 ]

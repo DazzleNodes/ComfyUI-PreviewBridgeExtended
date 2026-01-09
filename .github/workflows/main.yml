@@ -1,4 +1,4 @@
-name: Fit Mask to Image CI
+name: Preview Bridge Extended CI
 
 on:
   push:
