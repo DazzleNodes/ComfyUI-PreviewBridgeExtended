@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0-alpha] - 2026-01-09
+
+### Added
+- **Phase 1: LayerCache Architecture**: New unified layer storage system
+  - `LayerCache` dataclass with explicit `upstream`, `additions`, `subtractions` layers
+  - "Additions win" formula: `combined = max(upstream - subtractions, additions)`
+  - `decompose_and_store()`: Decomposes clipspace into canonical layers based on `editor_target`
+  - `get_output_mask()`: Returns appropriate mask based on `mask_output` setting
+  - `get_combined()`, `get_input_mask()`, `get_editor_mask()` accessor methods
+
+### Changed
+- LayerCache now runs in parallel with legacy caches (validation phase)
+- RE-COMPOSITION in `prepare_for_editing` now uses LayerCache's `get_combined()`
+
+### Technical Details
+- Architecture validated through Gemini 2.5 Pro consultation
+- Continuation ID: `d41790c9-6e5c-4505-b3a4-80f00796b768`
+- See `private/claude/2026-01-09__04-51-54__layercache-full-migration-analysis.md`
+
+### Known Issues
+- LayerCache/Legacy MISMATCH warnings expected (~12 unit differences due to anti-aliasing)
+- Full migration to LayerCache-only planned for v0.2.1
+
 ## [0.1.5-alpha] - 2026-01-09
 
 ### Fixed

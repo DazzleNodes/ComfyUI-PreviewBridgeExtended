@@ -26,6 +26,7 @@ from .caches import (
     clear_delta_caches, get_context_cache, set_context_cache,
     set_previewbridge_image, _preview_bridge_image_id_map, _preview_bridge_image_name_map
 )
+from .layer_cache import get_layer_cache, decompose_and_store, get_output_mask
 from .preview import save_preview_images, generate_info
 
 
@@ -336,6 +337,26 @@ class PreviewBridgeExtended:
         # Update clipspace validity after decomposition
         clipspace_mask_valid = not is_mask_empty(clipspace_mask)
 
+        # =====================================================
+        # LAYERCACHE INTEGRATION
+        # Store decomposed layers in LayerCache for unified state management
+        # This runs in parallel with the legacy cache system during transition
+        # =====================================================
+        if clipspace_mask_valid:
+            layer_cache = decompose_and_store(
+                node_id=unique_id,
+                clipspace=clipspace_mask,
+                upstream=upstream_input_mask,
+                editor_target=editor_target,
+                target_size=target_size
+            )
+            logging.info(f"[PreviewBridgeExtended] LayerCache updated: {layer_cache.debug_info()}")
+        else:
+            # No clipspace - just update upstream in LayerCache
+            layer_cache = get_layer_cache(unique_id)
+            layer_cache.on_upstream_change(upstream_input_mask)
+            layer_cache.last_editor_target = editor_target
+
         # Route clipspace edits to appropriate cache based on editor_target
         # This determines which layer(s) the MaskEditor affects
         editor_mask = None
@@ -395,6 +416,19 @@ class PreviewBridgeExtended:
         else:
             logging.info(f"[PreviewBridgeExtended] process() FINAL MASK: None")
 
+        # LAYERCACHE VALIDATION: Compare with legacy output
+        layer_cache_mask = get_output_mask(unique_id, mask_output)
+        if layer_cache_mask is not None and final_mask is not None:
+            lc_sum = layer_cache_mask.sum().item()
+            legacy_sum = final_mask.sum().item()
+            diff = abs(lc_sum - legacy_sum)
+            if diff > 1.0:  # Threshold for significant difference
+                logging.warning(f"[PreviewBridgeExtended] LayerCache/Legacy MISMATCH: "
+                               f"LayerCache={lc_sum:.2f}, Legacy={legacy_sum:.2f}, diff={diff:.2f}")
+            else:
+                logging.info(f"[PreviewBridgeExtended] LayerCache/Legacy MATCH: "
+                            f"LayerCache={lc_sum:.2f}, Legacy={legacy_sum:.2f}")
+
         # Create empty mask if none available
         if final_mask is None:
             final_mask = torch.zeros((1, height, width), dtype=torch.float32)
@@ -428,6 +462,7 @@ class PreviewBridgeExtended:
             'editor_mask': editor_mask,
             'mask_output': mask_output,
             'editor_target': editor_target,
+            'layer_cache': layer_cache,  # LayerCache for unified state management
         })
 
         # Determine which masks to show in preview based on mask_output

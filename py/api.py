@@ -23,6 +23,7 @@ from .caches import (
     _preview_bridge_context_cache
 )
 from .preview import apply_mask_overlays
+from .layer_cache import get_layer_cache, decompose_and_store, get_output_mask
 
 
 def generate_preview_for_api(
@@ -258,6 +259,21 @@ def generate_preview_for_api(
         _preview_bridge_context_cache[node_id]['input_override'] = input_override
         _preview_bridge_context_cache[node_id]['editor_target'] = editor_target
 
+    # LAYERCACHE INTEGRATION: Decompose clipspace into canonical layers
+    if clipspace_valid:
+        layer_cache = decompose_and_store(
+            node_id=node_id,
+            clipspace=clipspace_mask,
+            upstream=upstream_input_mask,
+            editor_target=editor_target,
+            target_size=target_size
+        )
+        logging.info(f"[PreviewBridgeExtended API] LayerCache updated: {layer_cache.debug_info()}")
+
+        # Store LayerCache reference in context
+        if node_id in _preview_bridge_context_cache:
+            _preview_bridge_context_cache[node_id]['layer_cache'] = layer_cache
+
     logging.info(f"[PreviewBridgeExtended API] Successfully generated preview: "
                  f"has_input={not input_empty}, has_editor={not editor_empty}, "
                  f"image_size={len(img_base64)} bytes")
@@ -377,34 +393,49 @@ def prepare_for_editing(node_id: str, editor_target_override: str = None) -> Opt
     editor_mask_for_display = cached_editor_mask
     if editor_target == "combined" and cached_editor_target in ("mask_editor", "input_mask"):
         # We're switching from a decomposed mode back to combined
-        # Reconstruct: combined = input_layer OR additions_layer
-        #
-        # CRITICAL: Use cached_input_override if available - it contains the user's
-        # edits to the input layer (subtractions from upstream). Without this,
-        # subtractions made in input_mask mode are lost when switching to combined.
-        if cached_input_override is not None and not is_mask_empty(cached_input_override):
-            input_layer = cached_input_override
-            logging.info(f"[PreviewBridgeExtended] RE-COMPOSITION: using cached_input_override, "
-                        f"sum={cached_input_override.sum().item():.2f}")
-        else:
-            input_layer = input_mask if input_mask is not None else upstream_input_mask
-            logging.info(f"[PreviewBridgeExtended] RE-COMPOSITION: using fallback input_mask/upstream")
-        additions_layer = cached_editor_mask
+        # Try LayerCache first (Phase 1 architecture), fall back to legacy
 
-        if input_layer is not None and additions_layer is not None:
-            # OR combine to get full combined state
-            combined_state = combine_masks_or(input_layer, additions_layer, target_size)
-            if combined_state is not None:
-                editor_mask_for_display = combined_state
-                logging.info(f"[PreviewBridgeExtended] RE-COMPOSITION: reconstructed combined state, "
-                            f"input_sum={input_layer.sum().item():.2f}, "
-                            f"additions_sum={additions_layer.sum().item():.2f}, "
-                            f"combined_sum={combined_state.sum().item():.2f}")
-        elif input_layer is not None:
-            # No additions, just use input layer
-            editor_mask_for_display = input_layer
-            logging.info(f"[PreviewBridgeExtended] RE-COMPOSITION: using input layer only, "
-                        f"sum={input_layer.sum().item():.2f}")
+        layer_cache = get_layer_cache(node_id)
+        if layer_cache.has_content():
+            # Use LayerCache's get_combined() - applies "additions win" formula
+            combined_from_cache = layer_cache.get_combined()
+            if combined_from_cache is not None and not is_mask_empty(combined_from_cache):
+                editor_mask_for_display = combined_from_cache
+                logging.info(f"[PreviewBridgeExtended] RE-COMPOSITION via LayerCache: {layer_cache.debug_info()}")
+                logging.info(f"[PreviewBridgeExtended] LayerCache combined sum={combined_from_cache.sum().item():.2f}")
+            else:
+                logging.info(f"[PreviewBridgeExtended] LayerCache has_content but get_combined() returned empty")
+        else:
+            # LEGACY FALLBACK: Use cached masks directly
+            # Reconstruct: combined = input_layer OR additions_layer
+            #
+            # CRITICAL: Use cached_input_override if available - it contains the user's
+            # edits to the input layer (subtractions from upstream). Without this,
+            # subtractions made in input_mask mode are lost when switching to combined.
+            logging.info(f"[PreviewBridgeExtended] RE-COMPOSITION: LayerCache empty, using legacy fallback")
+            if cached_input_override is not None and not is_mask_empty(cached_input_override):
+                input_layer = cached_input_override
+                logging.info(f"[PreviewBridgeExtended] RE-COMPOSITION legacy: using cached_input_override, "
+                            f"sum={cached_input_override.sum().item():.2f}")
+            else:
+                input_layer = input_mask if input_mask is not None else upstream_input_mask
+                logging.info(f"[PreviewBridgeExtended] RE-COMPOSITION legacy: using fallback input_mask/upstream")
+            additions_layer = cached_editor_mask
+
+            if input_layer is not None and additions_layer is not None:
+                # OR combine to get full combined state
+                combined_state = combine_masks_or(input_layer, additions_layer, target_size)
+                if combined_state is not None:
+                    editor_mask_for_display = combined_state
+                    logging.info(f"[PreviewBridgeExtended] RE-COMPOSITION legacy: reconstructed combined state, "
+                                f"input_sum={input_layer.sum().item():.2f}, "
+                                f"additions_sum={additions_layer.sum().item():.2f}, "
+                                f"combined_sum={combined_state.sum().item():.2f}")
+            elif input_layer is not None:
+                # No additions, just use input layer
+                editor_mask_for_display = input_layer
+                logging.info(f"[PreviewBridgeExtended] RE-COMPOSITION legacy: using input layer only, "
+                            f"sum={input_layer.sum().item():.2f}")
 
     # Generate image with for_editing=True
     # This puts the appropriate masks in alpha based on editor_target

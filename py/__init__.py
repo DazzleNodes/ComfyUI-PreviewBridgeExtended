@@ -7,7 +7,8 @@
 #   - mask_ops.py: Tensor operations
 #   - preview.py: Preview image generation
 #   - api.py: API endpoint handlers
-#   - caches.py: Module-level caches
+#   - layer_cache.py: LayerCache dataclass for unified layer storage
+#   - caches.py: Legacy module-level caches (being replaced by layer_cache)
 #   - utils.py: Utility functions
 
 # Re-export node class and registration mappings
@@ -40,6 +41,15 @@ from .mask_ops import (
     compute_mask_delta,
 )
 
+# Re-export LayerCache for unified layer storage
+from .layer_cache import (
+    LayerCache,
+    get_layer_cache,
+    delete_layer_cache,
+    decompose_and_store,
+    get_output_mask,
+)
+
 __all__ = [
     # Node
     'PreviewBridgeExtended',
@@ -59,4 +69,10 @@ __all__ = [
     'combine_masks_or',
     'combine_masks_and',
     'compute_mask_delta',
+    # LayerCache
+    'LayerCache',
+    'get_layer_cache',
+    'delete_layer_cache',
+    'decompose_and_store',
+    'get_output_mask',
 ]
