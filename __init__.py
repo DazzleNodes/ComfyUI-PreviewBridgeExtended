@@ -5,7 +5,7 @@ Enhanced Preview Bridge with optional mask input support.
 Part of the DazzleNodes collection - standalone ComfyUI custom nodes.
 """
 
-from .py.preview_bridge_extended import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS, generate_preview_for_api, prepare_for_editing
+from .py import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS, generate_preview_for_api, prepare_for_editing
 from .version import __version__
 
 # Tell ComfyUI where to find our JavaScript files

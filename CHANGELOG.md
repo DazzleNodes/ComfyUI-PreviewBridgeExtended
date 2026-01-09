@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4-alpha] - 2026-01-09
+
+### Changed
+- **Phase 0 Module Refactor**: Split monolithic files into focused modules for maintainability
+  - Python: `preview_bridge_extended.py` (1768 lines) → 6 modules:
+    - `node.py`: Main PreviewBridgeExtended class
+    - `api.py`: API endpoint handlers (generate_preview_for_api, prepare_for_editing)
+    - `mask_ops.py`: Tensor operations (resize, combine, delta computation)
+    - `preview.py`: Preview image generation with mask overlays
+    - `caches.py`: Module-level cache dictionaries
+    - `utils.py`: Clipspace loading utilities
+  - JavaScript: `preview_bridge_extended.js` (478 lines) → 3 modules:
+    - `main.js`: Widget setup and node initialization
+    - `api.js`: API communication with Python backend
+    - `maskeditor.js`: MaskEditor integration
+
+### Fixed
+- **Mode-Switch Cache Corruption**: Fixed multiple bugs causing edits to be lost when switching modes
+  - `input_mask/mask_editor`: Now computes intersection instead of returning full upstream
+  - Added decomposition when switching FROM combined TO mask_editor/input_mask
+  - Added RE-COMPOSITION when switching TO combined FROM other modes
+  - `input_mask/input_mask`: MaskEditor now loads intersection (not full upstream)
+  - Context cache now updated with editor_target in prepare_for_editing
+
+### Known Issues
+- RE-COMPOSITION uses upstream instead of cached_input_override, causing subtractions to be lost in complex mode sequences (documented in private/claude/2026-01-09__03-42-22__subtractions-layer-architecture-analysis.md)
+- Explicit subtractions layer needed for reliable multi-mode editing (planned for Phase 1.5)
+
 ## [0.1.3-alpha] - 2026-01-09
 
 ### Fixed
