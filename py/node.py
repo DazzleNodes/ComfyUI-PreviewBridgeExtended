@@ -173,6 +173,13 @@ class PreviewBridgeExtended:
                 # Clear LayerCache when images change and restore is disabled
                 layer_cache.clear()
                 logging.info(f"[PreviewBridgeExtended] Image changed, LayerCache cleared (restore_mask=never)")
+        elif restore_mask == "never":
+            # Even when images don't change, restore_mask=never means don't persist user edits
+            # Clear additions/subtractions but keep upstream (that's from mask_opt, not user edits)
+            if layer_cache.additions is not None or layer_cache.subtractions is not None:
+                layer_cache.additions = None
+                layer_cache.subtractions = None
+                logging.info(f"[PreviewBridgeExtended] restore_mask=never, cleared user edits (additions/subtractions)")
 
         # Handle clipspace registration when images haven't changed
         if not images_changed and image and image not in _preview_bridge_image_id_map:

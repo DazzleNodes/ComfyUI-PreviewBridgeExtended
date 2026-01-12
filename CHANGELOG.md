@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.3.1-alpha] - 2026-01-12
 
 ### Fixed
+- **MaskEditor Clear Button**: Fixed Clear button not actually clearing masks (fixes #3)
+  - Combined mode: Use full subtraction instead of setting layers to None
+  - Input_mask mode: Prevent fallback to original mask when fully subtracted
+  - All modes: Fixed `prepare_for_editing()` fallback to `original_m` when mask is intentionally empty
+- **restore_mask=never Behavior**: Fixed user edits persisting when `restore_mask=never`
+  - Previously only cleared on image change, now clears additions/subtractions on every workflow run
 - **Subtraction Layer Reset Bug**: Fixed subtractions being lost on every workflow re-run (fixes #12)
   - Root cause: `on_upstream_change()` used `data_ptr()` (memory address) for change detection
   - Memory addresses change every execution even when content is identical

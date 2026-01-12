@@ -101,7 +101,40 @@ def generate_preview_for_api(
             _preview_bridge_context_cache[node_id]['layer_cache'] = layer_cache
             _preview_bridge_context_cache[node_id]['editor_target'] = editor_target
     else:
+        # Clipspace is empty - user clicked Clear button or erased all mask content
+        # Clear the appropriate layer(s) based on editor_target mode
         layer_cache = get_layer_cache(node_id)
+        logging.info(f"[PreviewBridgeExtended API] Empty clipspace received, mode={editor_target}")
+
+        if editor_target == "combined":
+            # User cleared the combined view - fully subtract upstream to get empty result
+            # Setting subtractions = upstream means get_input_mask() returns zeros
+            if layer_cache.upstream is not None:
+                layer_cache.subtractions = layer_cache.upstream.clone()
+                logging.info(f"[PreviewBridgeExtended API] Cleared via full subtraction (combined mode), "
+                            f"subtractions_sum={layer_cache.subtractions.sum().item():.2f}")
+            else:
+                layer_cache.subtractions = None
+                logging.info("[PreviewBridgeExtended API] Cleared (combined mode, no upstream)")
+            layer_cache.additions = None
+        elif editor_target == "mask_editor":
+            # User cleared the additions layer only
+            layer_cache.additions = None
+            logging.info("[PreviewBridgeExtended API] Cleared additions (mask_editor mode)")
+        elif editor_target == "input_mask":
+            # User cleared the input mask - this means full subtraction of upstream
+            if layer_cache.upstream is not None:
+                layer_cache.subtractions = layer_cache.upstream.clone()
+                logging.info(f"[PreviewBridgeExtended API] Set full subtractions (input_mask mode), "
+                            f"sum={layer_cache.subtractions.sum().item():.2f}")
+            else:
+                layer_cache.subtractions = None
+                logging.info("[PreviewBridgeExtended API] No upstream to subtract (input_mask mode)")
+
+        # Update context cache
+        if node_id in _preview_bridge_context_cache:
+            _preview_bridge_context_cache[node_id]['layer_cache'] = layer_cache
+            _preview_bridge_context_cache[node_id]['editor_target'] = editor_target
 
     # =====================================================
     # GET PREVIEW MASKS FROM LAYERCACHE
@@ -301,6 +334,11 @@ def prepare_for_editing(node_id: str, editor_target_override: str = None) -> Opt
         logging.info(f"[PreviewBridgeExtended] combined mode: using get_combined(), "
                     f"sum={editor_mask_for_display.sum().item() if editor_mask_for_display is not None else 0:.2f}")
 
+        # CRITICAL FIX: If combined mask is empty (fully cleared), prevent fallback to original_m
+        if is_mask_empty(editor_mask_for_display):
+            original_input_mask = None
+            logging.info("[PreviewBridgeExtended] combined empty, preventing original_m fallback")
+
     elif editor_target == "mask_editor":
         # For mask_editor, put only additions in alpha
         editor_mask_for_display = layer_cache.additions
@@ -316,6 +354,13 @@ def prepare_for_editing(node_id: str, editor_target_override: str = None) -> Opt
         input_mask = layer_cache.get_input_mask()  # Same - this goes into alpha
         logging.info(f"[PreviewBridgeExtended] input_mask mode: using get_input_mask(), "
                     f"sum={editor_mask_for_display.sum().item() if editor_mask_for_display is not None else 0:.2f}")
+
+        # CRITICAL FIX: If input mask is empty (fully subtracted), prevent fallback to original_m
+        # This fixes the "mask reappearing on third open" bug. An empty result from get_input_mask()
+        # means "user explicitly cleared everything" not "no edits yet".
+        if is_mask_empty(editor_mask_for_display):
+            original_input_mask = None
+            logging.info("[PreviewBridgeExtended] input_mask empty, preventing original_m fallback")
 
     else:
         editor_mask_for_display = None
