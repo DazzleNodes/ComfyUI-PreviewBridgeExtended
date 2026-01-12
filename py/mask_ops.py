@@ -4,8 +4,10 @@ Preview Bridge Extended - Mask Operations
 Provides tensor operations for mask manipulation including:
 - Resize, combine (OR/AND), compute delta
 - Empty mask detection
+- Content-based tensor fingerprinting
 """
 
+import hashlib
 import torch
 import torch.nn.functional as F
 from typing import Tuple, Optional
@@ -39,6 +41,43 @@ def is_mask_empty(mask: Optional[torch.Tensor]) -> bool:
         return True
 
     return False
+
+
+def compute_tensor_fingerprint(tensor: Optional[torch.Tensor]) -> Optional[str]:
+    """
+    Compute content-based fingerprint for a tensor.
+
+    Uses strategic sampling (first 4 + last 4 values) combined with shape
+    for O(1) content change detection. This is critical for detecting when
+    tensor content actually changes vs just the memory address changing
+    (which happens every ComfyUI execution).
+
+    Based on gist: https://gist.github.com/djdarcy/f7aaf10d36f2c9f207e948e6f39e8ad7
+    From Impact Pack PR #1172.
+
+    Args:
+        tensor: Tensor to fingerprint (can be None)
+
+    Returns:
+        MD5 hex digest string, or None if tensor is None
+    """
+    if tensor is None:
+        return None
+
+    shape_str = f"{tensor.shape}"
+
+    try:
+        if tensor.numel() > 0:
+            flat = tensor.reshape(-1)
+            # Sample first and last 4 values as fingerprint
+            first = flat[:min(4, flat.numel())].cpu().numpy().tobytes()
+            last = flat[-min(4, flat.numel()):].cpu().numpy().tobytes()
+        else:
+            first = last = b''
+    except Exception:
+        first = last = b''
+
+    return hashlib.md5(shape_str.encode() + first + last).hexdigest()
 
 
 def resize_mask(

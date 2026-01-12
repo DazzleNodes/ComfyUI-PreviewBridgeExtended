@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1-alpha] - 2026-01-12
+
+### Fixed
+- **Subtraction Layer Reset Bug**: Fixed subtractions being lost on every workflow re-run (fixes #12)
+  - Root cause: `on_upstream_change()` used `data_ptr()` (memory address) for change detection
+  - Memory addresses change every execution even when content is identical
+  - Solution: Content-based fingerprinting using strategic sampling (first/last 4 values + shape)
+- **Chained Node Cache Invalidation**: Fixed second PBE node in a chain losing all edits on re-run
+  - Root cause: `validate_image()` and `_detect_images_changed()` used object identity (`id()` and `is not`)
+  - Dynamically generated images (outputs from upstream nodes) have new tensor objects each execution
+  - Solution: Apply same content-based fingerprinting to image change detection
+
+### Added
+- `compute_tensor_fingerprint()` function in `mask_ops.py` for O(1) content-based tensor comparison
+  - Based on [gist](https://gist.github.com/djdarcy/f7aaf10d36f2c9f207e948e6f39e8ad7) from Impact Pack PR #1172
+  - Samples 8 values (first 4 + last 4) combined with shape for MD5 fingerprint
+
+### Changed
+- `LayerCache.image_id` renamed to `image_fingerprint` (now stores content hash, not memory address)
+- `LayerCache.upstream_hash` now stores content fingerprint string instead of pointer hash
+
 ## [0.3.0-alpha] - 2026-01-09
 
 ### Added

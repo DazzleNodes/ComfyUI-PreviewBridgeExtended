@@ -11,7 +11,7 @@ from typing import Tuple, Optional, Dict, Any
 import folder_paths
 
 from .utils import is_clipspace_path, load_mask_from_clipspace, register_clipspace_image
-from .mask_ops import is_mask_empty, resize_mask, process_input_mask
+from .mask_ops import is_mask_empty, resize_mask, process_input_mask, compute_tensor_fingerprint
 from .caches import (
     get_cache, set_cache,
     get_original_input_cache, set_original_input_cache, delete_original_input_cache,
@@ -325,14 +325,28 @@ class PreviewBridgeExtended:
         }
 
     def _detect_images_changed(self, images: torch.Tensor, unique_id: str) -> bool:
-        """Detect if input images have changed from cached version."""
+        """
+        Detect if input images have changed from cached version.
+
+        Uses content-based fingerprinting instead of object identity to handle
+        dynamically generated images (e.g., outputs from upstream nodes) that
+        have new tensor objects each execution but same content.
+        """
         cached = get_cache(unique_id)
         if cached is None:
             return True
 
         cached_images, _ = cached
-        # Use 'is not' for identity check (same tensor object)
-        return cached_images is not images
+        # Use content fingerprinting instead of object identity
+        cached_fp = compute_tensor_fingerprint(cached_images)
+        current_fp = compute_tensor_fingerprint(images)
+
+        changed = cached_fp != current_fp
+        if changed:
+            logging.debug(f"[PreviewBridgeExtended] Images content changed: "
+                         f"old={cached_fp[:8] if cached_fp else 'None'}... "
+                         f"new={current_fp[:8] if current_fp else 'None'}...")
+        return changed
 
     def _load_clipspace_mask(
         self,

@@ -1,7 +1,7 @@
 [project]
 name = "comfyui-preview-bridge-extended"
 description = "Enhanced Preview Bridge node for ComfyUI with LayerCache architecture, dual-layer mask editing, and instant preview refresh. Extends Impact Pack's Preview Bridge with optional MASK input, mode selection, and WYSIWYG preview display."
-version = "0.3.0"
+version = "0.3.1"
 readme = "README.md"
 license = { file = "LICENSE" }
 requires-python = ">=3.10"

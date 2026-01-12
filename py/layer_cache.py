@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from typing import Dict, Optional, Tuple
 import torch
 
-from .mask_ops import is_mask_empty, resize_mask
+from .mask_ops import is_mask_empty, resize_mask, compute_tensor_fingerprint
 
 
 @dataclass
@@ -46,9 +46,9 @@ class LayerCache:
     subtractions: Optional[torch.Tensor] = None
 
     # Metadata for invalidation and debugging
-    image_id: Optional[int] = None  # id(images) tensor for change detection
+    image_fingerprint: Optional[str] = None  # Content-based fingerprint for image change detection
     last_editor_target: Optional[str] = None  # Mode when last saved
-    upstream_hash: Optional[int] = None  # Hash of upstream for change detection
+    upstream_hash: Optional[str] = None  # Content-based fingerprint for upstream change detection
 
     def get_combined(self) -> Optional[torch.Tensor]:
         """
@@ -114,25 +114,34 @@ class LayerCache:
         """
         Check if cache is valid for current image. Invalidate if image changed.
 
+        Uses content-based fingerprinting to detect actual content changes,
+        not just memory address changes (which happen every ComfyUI execution
+        for dynamically generated images like outputs from upstream nodes).
+
         Args:
             images: Current input images tensor
 
         Returns:
             True if cache is valid, False if cache was invalidated
         """
-        current_id = id(images)
+        current_fingerprint = compute_tensor_fingerprint(images)
 
-        if self.image_id is not None and self.image_id != current_id:
-            # Image changed - invalidate all layers
-            logging.info(f"[LayerCache] Image changed, invalidating all layers")
+        if self.image_fingerprint is not None and self.image_fingerprint != current_fingerprint:
+            # Image CONTENT actually changed - invalidate all layers
+            logging.info(f"[LayerCache] Image CONTENT changed "
+                        f"(old={self.image_fingerprint[:8]}... new={current_fingerprint[:8]}...), "
+                        f"invalidating all layers")
             self.upstream = None
             self.additions = None
             self.subtractions = None
             self.upstream_hash = None
-            self.image_id = current_id
+            self.image_fingerprint = current_fingerprint
             return False
 
-        self.image_id = current_id
+        if self.image_fingerprint is None:
+            logging.debug(f"[LayerCache] Image fingerprint initialized: {current_fingerprint[:8]}...")
+
+        self.image_fingerprint = current_fingerprint
         return True
 
     def on_upstream_change(self, new_upstream: Optional[torch.Tensor]) -> None:
@@ -143,21 +152,44 @@ class LayerCache:
         - additions are preserved (absolute areas user painted intentionally)
         - subtractions are reset (they were relative to old upstream)
 
+        Uses content-based fingerprinting to detect actual content changes,
+        not just memory address changes (which happen every ComfyUI execution).
+
         Args:
             new_upstream: New upstream mask tensor
         """
-        old_hash = self.upstream_hash
-        new_hash = hash(new_upstream.data_ptr()) if new_upstream is not None else None
+        old_fingerprint = self.upstream_hash
+        new_fingerprint = compute_tensor_fingerprint(new_upstream)
 
-        if old_hash != new_hash:
-            logging.info(f"[LayerCache] Upstream changed, preserving additions, resetting subtractions")
+        # Log fingerprint comparison for debugging
+        if new_upstream is not None:
+            logging.debug(f"[LayerCache] Upstream fingerprint check: "
+                         f"old={old_fingerprint[:8] if old_fingerprint else 'None'}... "
+                         f"new={new_fingerprint[:8] if new_fingerprint else 'None'}... "
+                         f"sum={new_upstream.sum().item():.2f}")
+
+        if old_fingerprint != new_fingerprint:
+            # Content actually changed - reset subtractions
+            if old_fingerprint is not None:
+                # Only log "changed" if we had a previous value (not first run)
+                logging.info(f"[LayerCache] Upstream CONTENT changed "
+                            f"(old={old_fingerprint[:8]}... new={new_fingerprint[:8] if new_fingerprint else 'None'}...), "
+                            f"preserving additions, resetting subtractions")
+            else:
+                logging.info(f"[LayerCache] Upstream initialized "
+                            f"(fingerprint={new_fingerprint[:8] if new_fingerprint else 'None'}...)")
+
             self.upstream = new_upstream
-            self.upstream_hash = new_hash
+            self.upstream_hash = new_fingerprint
             # Additions are absolute - user painted these areas intentionally
             # Subtractions are relative to old upstream - now invalid
             self.subtractions = None
             # self.additions preserved
         else:
+            # Same content, just update reference (no subtractions reset!)
+            logging.debug(f"[LayerCache] Upstream content unchanged "
+                         f"(fingerprint={new_fingerprint[:8] if new_fingerprint else 'None'}...), "
+                         f"preserving subtractions")
             self.upstream = new_upstream
 
     def clear(self) -> None:
@@ -165,7 +197,7 @@ class LayerCache:
         self.upstream = None
         self.additions = None
         self.subtractions = None
-        self.image_id = None
+        self.image_fingerprint = None
         self.last_editor_target = None
         self.upstream_hash = None
 
