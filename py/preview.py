@@ -9,6 +9,9 @@ import torch
 from typing import Tuple, Optional
 import nodes
 
+# Use named logger so PBE_DEBUG environment variable works
+logger = logging.getLogger("PreviewBridgeExtended")
+
 from .mask_ops import is_mask_empty, resize_mask
 
 
@@ -170,11 +173,11 @@ def apply_mask_overlays(
             # IMPORTANT: Prioritize input_m since it contains the correct intersection
             if input_m is not None:
                 alpha = 1.0 - input_m
-                logging.info(f"[PreviewBridgeExtended] input_mask for_editing: using input_m, sum={input_m.sum().item():.2f}")
+                logger.debug(f"[PreviewBridgeExtended] input_mask for_editing: using input_m, sum={input_m.sum().item():.2f}")
             elif original_m is not None:
                 # Fallback to original if no input_m provided
                 alpha = 1.0 - original_m
-                logging.info(f"[PreviewBridgeExtended] input_mask for_editing: fallback to original_m")
+                logger.debug(f"[PreviewBridgeExtended] input_mask for_editing: fallback to original_m")
 
         elif editor_target == "combined":
             # When editor_target=combined, editor_m IS the complete combined state
@@ -182,25 +185,25 @@ def apply_mask_overlays(
             # Do NOT OR with original - that would restore erased areas.
 
             # Debug logging for combined mode
-            logging.info(f"[PreviewBridgeExtended] for_editing=combined: "
+            logger.debug(f"[PreviewBridgeExtended] for_editing=combined: "
                         f"original_m={original_m is not None}, input_m={input_m is not None}, "
                         f"editor_m={editor_m is not None}")
 
             if editor_m is not None:
                 # Use editor_m directly - it already has the complete combined state
                 alpha = 1.0 - editor_m
-                logging.info(f"[PreviewBridgeExtended] Using editor_m directly: sum={editor_m.sum().item():.2f}")
+                logger.debug(f"[PreviewBridgeExtended] Using editor_m directly: sum={editor_m.sum().item():.2f}")
             elif original_m is not None:
                 # No edits yet - use original as starting point
                 alpha = 1.0 - original_m
-                logging.info(f"[PreviewBridgeExtended] No editor_m, using original_m: sum={original_m.sum().item():.2f}")
+                logger.debug(f"[PreviewBridgeExtended] No editor_m, using original_m: sum={original_m.sum().item():.2f}")
             elif input_m is not None:
                 alpha = 1.0 - input_m
-                logging.info(f"[PreviewBridgeExtended] No editor_m/original_m, using input_m: sum={input_m.sum().item():.2f}")
+                logger.debug(f"[PreviewBridgeExtended] No editor_m/original_m, using input_m: sum={input_m.sum().item():.2f}")
             else:
-                logging.info(f"[PreviewBridgeExtended] No masks available for combined mode")
+                logger.debug(f"[PreviewBridgeExtended] No masks available for combined mode")
 
-            logging.info(f"[PreviewBridgeExtended] Final alpha: min={alpha.min().item():.4f}, "
+            logger.debug(f"[PreviewBridgeExtended] Final alpha: min={alpha.min().item():.4f}, "
                         f"max={alpha.max().item():.4f}, transparent_pixels={(alpha < 1.0).sum().item()}")
 
         rgba[:, :, :, 3] = alpha

@@ -16,6 +16,9 @@ from io import BytesIO
 from PIL import Image
 from typing import Optional, Dict, Any
 
+# Use named logger so PBE_DEBUG environment variable works
+logger = logging.getLogger("PreviewBridgeExtended")
+
 from .utils import load_mask_from_clipspace
 from .mask_ops import is_mask_empty
 from .caches import get_context_cache, _preview_bridge_context_cache
@@ -73,13 +76,13 @@ def generate_preview_for_api(
     batch, height, width, channels = images.shape
     target_size = (height, width)
 
-    logging.info(f"[PreviewBridgeExtended API] refresh-preview called: node_id={node_id}, "
+    logger.debug(f"[PreviewBridgeExtended API] refresh-preview called: node_id={node_id}, "
                  f"mask_output={mask_output}, editor_target={editor_target}")
 
     clipspace_valid = clipspace_mask is not None and not is_mask_empty(clipspace_mask)
 
     if clipspace_mask is not None:
-        logging.info(f"[PreviewBridgeExtended API] clipspace stats: sum={clipspace_mask.sum().item():.2f}, "
+        logger.debug(f"[PreviewBridgeExtended API] clipspace stats: sum={clipspace_mask.sum().item():.2f}, "
                      f"shape={clipspace_mask.shape}")
 
     # =====================================================
@@ -94,7 +97,7 @@ def generate_preview_for_api(
             editor_target=editor_target,
             target_size=target_size
         )
-        logging.info(f"[PreviewBridgeExtended API] LayerCache updated: {layer_cache.debug_info()}")
+        logger.debug(f"[PreviewBridgeExtended API] LayerCache updated: {layer_cache.debug_info()}")
 
         # Update context cache with LayerCache
         if node_id in _preview_bridge_context_cache:
@@ -104,32 +107,32 @@ def generate_preview_for_api(
         # Clipspace is empty - user clicked Clear button or erased all mask content
         # Clear the appropriate layer(s) based on editor_target mode
         layer_cache = get_layer_cache(node_id)
-        logging.info(f"[PreviewBridgeExtended API] Empty clipspace received, mode={editor_target}")
+        logger.debug(f"[PreviewBridgeExtended API] Empty clipspace received, mode={editor_target}")
 
         if editor_target == "combined":
             # User cleared the combined view - fully subtract upstream to get empty result
             # Setting subtractions = upstream means get_input_mask() returns zeros
             if layer_cache.upstream is not None:
                 layer_cache.subtractions = layer_cache.upstream.clone()
-                logging.info(f"[PreviewBridgeExtended API] Cleared via full subtraction (combined mode), "
+                logger.debug(f"[PreviewBridgeExtended API] Cleared via full subtraction (combined mode), "
                             f"subtractions_sum={layer_cache.subtractions.sum().item():.2f}")
             else:
                 layer_cache.subtractions = None
-                logging.info("[PreviewBridgeExtended API] Cleared (combined mode, no upstream)")
+                logger.debug("[PreviewBridgeExtended API] Cleared (combined mode, no upstream)")
             layer_cache.additions = None
         elif editor_target == "mask_editor":
             # User cleared the additions layer only
             layer_cache.additions = None
-            logging.info("[PreviewBridgeExtended API] Cleared additions (mask_editor mode)")
+            logger.debug("[PreviewBridgeExtended API] Cleared additions (mask_editor mode)")
         elif editor_target == "input_mask":
             # User cleared the input mask - this means full subtraction of upstream
             if layer_cache.upstream is not None:
                 layer_cache.subtractions = layer_cache.upstream.clone()
-                logging.info(f"[PreviewBridgeExtended API] Set full subtractions (input_mask mode), "
+                logger.debug(f"[PreviewBridgeExtended API] Set full subtractions (input_mask mode), "
                             f"sum={layer_cache.subtractions.sum().item():.2f}")
             else:
                 layer_cache.subtractions = None
-                logging.info("[PreviewBridgeExtended API] No upstream to subtract (input_mask mode)")
+                logger.debug("[PreviewBridgeExtended API] No upstream to subtract (input_mask mode)")
 
         # Update context cache
         if node_id in _preview_bridge_context_cache:
@@ -174,7 +177,7 @@ def generate_preview_for_api(
     img_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
     data_uri = f"data:image/png;base64,{img_base64}"
 
-    logging.info(f"[PreviewBridgeExtended API] Successfully generated preview: "
+    logger.debug(f"[PreviewBridgeExtended API] Successfully generated preview: "
                  f"has_input={not input_empty}, has_editor={not editor_empty}")
 
     return {
@@ -227,7 +230,7 @@ def get_preview_for_api(
             'error': 'No cached images for node'
         }
 
-    logging.info(f"[PreviewBridgeExtended API] get-preview called: node_id={node_id}, "
+    logger.debug(f"[PreviewBridgeExtended API] get-preview called: node_id={node_id}, "
                  f"mask_output={mask_output}, editor_target={editor_target}")
 
     # Get preview masks from existing LayerCache state (no decomposition)
@@ -265,7 +268,7 @@ def get_preview_for_api(
     img_base64 = base64.b64encode(buffer.getvalue()).decode('utf-8')
     data_uri = f"data:image/png;base64,{img_base64}"
 
-    logging.info(f"[PreviewBridgeExtended API] get-preview success: "
+    logger.debug(f"[PreviewBridgeExtended API] get-preview success: "
                  f"has_input={not input_empty}, has_editor={not editor_empty}")
 
     return {
@@ -291,12 +294,12 @@ def prepare_for_editing(node_id: str, editor_target_override: str = None) -> Opt
     Returns:
         Dict with 'success', 'image_data' (base64 PNG), or 'error'
     """
-    logging.info(f"[PreviewBridgeExtended] prepare_for_editing called for node {node_id}, override={editor_target_override}")
+    logger.debug(f"[PreviewBridgeExtended] prepare_for_editing called for node {node_id}, override={editor_target_override}")
 
     # Get cached context for this node
     context = get_context_cache(node_id)
     if context is None:
-        logging.warning(f"[PreviewBridgeExtended] No cached context for node {node_id}")
+        logger.warning(f"[PreviewBridgeExtended] No cached context for node {node_id}")
         return {
             'success': False,
             'error': f'No cached context for node {node_id}. Run workflow first.'
@@ -320,8 +323,8 @@ def prepare_for_editing(node_id: str, editor_target_override: str = None) -> Opt
     # Get LayerCache for this node
     layer_cache = get_layer_cache(node_id)
 
-    logging.info(f"[PreviewBridgeExtended] LayerCache state: {layer_cache.debug_info()}")
-    logging.info(f"[PreviewBridgeExtended] Mode: cached={cached_editor_target}, target={editor_target}")
+    logger.debug(f"[PreviewBridgeExtended] LayerCache state: {layer_cache.debug_info()}")
+    logger.debug(f"[PreviewBridgeExtended] Mode: cached={cached_editor_target}, target={editor_target}")
 
     # =====================================================
     # DETERMINE WHAT TO PUT IN ALPHA FOR EDITING
@@ -331,19 +334,19 @@ def prepare_for_editing(node_id: str, editor_target_override: str = None) -> Opt
         # For combined editing, put the full combined state in alpha
         editor_mask_for_display = layer_cache.get_combined()
         input_mask = layer_cache.get_input_mask()  # Show current input state (with subtractions)
-        logging.info(f"[PreviewBridgeExtended] combined mode: using get_combined(), "
+        logger.debug(f"[PreviewBridgeExtended] combined mode: using get_combined(), "
                     f"sum={editor_mask_for_display.sum().item() if editor_mask_for_display is not None else 0:.2f}")
 
         # CRITICAL FIX: If combined mask is empty (fully cleared), prevent fallback to original_m
         if is_mask_empty(editor_mask_for_display):
             original_input_mask = None
-            logging.info("[PreviewBridgeExtended] combined empty, preventing original_m fallback")
+            logger.debug("[PreviewBridgeExtended] combined empty, preventing original_m fallback")
 
     elif editor_target == "mask_editor":
         # For mask_editor, put only additions in alpha
         editor_mask_for_display = layer_cache.additions
         input_mask = layer_cache.get_input_mask()  # Show current input state (with subtractions)
-        logging.info(f"[PreviewBridgeExtended] mask_editor mode: using additions, "
+        logger.debug(f"[PreviewBridgeExtended] mask_editor mode: using additions, "
                     f"sum={editor_mask_for_display.sum().item() if editor_mask_for_display is not None else 0:.2f}")
 
     elif editor_target == "input_mask":
@@ -352,7 +355,7 @@ def prepare_for_editing(node_id: str, editor_target_override: str = None) -> Opt
         # the correct mask (with subtractions) into the alpha channel
         editor_mask_for_display = layer_cache.get_input_mask()
         input_mask = layer_cache.get_input_mask()  # Same - this goes into alpha
-        logging.info(f"[PreviewBridgeExtended] input_mask mode: using get_input_mask(), "
+        logger.debug(f"[PreviewBridgeExtended] input_mask mode: using get_input_mask(), "
                     f"sum={editor_mask_for_display.sum().item() if editor_mask_for_display is not None else 0:.2f}")
 
         # CRITICAL FIX: If input mask is empty (fully subtracted), prevent fallback to original_m
@@ -360,7 +363,7 @@ def prepare_for_editing(node_id: str, editor_target_override: str = None) -> Opt
         # means "user explicitly cleared everything" not "no edits yet".
         if is_mask_empty(editor_mask_for_display):
             original_input_mask = None
-            logging.info("[PreviewBridgeExtended] input_mask empty, preventing original_m fallback")
+            logger.debug("[PreviewBridgeExtended] input_mask empty, preventing original_m fallback")
 
     else:
         editor_mask_for_display = None
@@ -381,7 +384,7 @@ def prepare_for_editing(node_id: str, editor_target_override: str = None) -> Opt
     alpha_max = alpha_channel.max().item()
     transparent_pixels = (alpha_channel < 1.0).sum().item()
     total_pixels = alpha_channel.numel()
-    logging.info(f"[PreviewBridgeExtended] Alpha stats: min={alpha_min:.3f}, max={alpha_max:.3f}, "
+    logger.debug(f"[PreviewBridgeExtended] Alpha stats: min={alpha_min:.3f}, max={alpha_max:.3f}, "
                  f"transparent_pixels={transparent_pixels}/{total_pixels}")
 
     # Convert tensor to PIL Image (always RGBA for editing)
@@ -397,7 +400,7 @@ def prepare_for_editing(node_id: str, editor_target_override: str = None) -> Opt
     b64_data = base64.b64encode(buffer.read()).decode('utf-8')
     data_uri = f"data:image/png;base64,{b64_data}"
 
-    logging.info(f"[PreviewBridgeExtended] Generated editable image, size={len(b64_data)} bytes")
+    logger.debug(f"[PreviewBridgeExtended] Generated editable image, size={len(b64_data)} bytes")
 
     # Update context cache with the editor_target used for this edit session
     if node_id in _preview_bridge_context_cache:

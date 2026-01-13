@@ -5,6 +5,21 @@ Enhanced Preview Bridge with optional mask input support.
 Part of the DazzleNodes collection - standalone ComfyUI custom nodes.
 """
 
+import logging
+import os
+
+# Configure module logger
+_logger = logging.getLogger("PreviewBridgeExtended")
+
+# Enable debug logging via environment variable: PBE_DEBUG=1
+if os.environ.get('PBE_DEBUG', '').lower() in ('1', 'true', 'yes'):
+    _logger.setLevel(logging.DEBUG)
+    # Ensure debug messages are visible even if root logger level is higher
+    if not _logger.handlers:
+        _handler = logging.StreamHandler()
+        _handler.setFormatter(logging.Formatter('[%(name)s] %(levelname)s: %(message)s'))
+        _logger.addHandler(_handler)
+
 from .py import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS, generate_preview_for_api, get_preview_for_api, prepare_for_editing
 from .version import __version__
 
@@ -69,7 +84,7 @@ try:
                 'error': str(e)
             }, status=500)
 
-    print("[PreviewBridgeExtended] Registered API endpoint: /preview-bridge-extended/refresh-preview")
+    _logger.debug("[PreviewBridgeExtended] Registered API endpoint: /preview-bridge-extended/refresh-preview")
 
     @server.PromptServer.instance.routes.post("/preview-bridge-extended/prepare-for-edit")
     async def prepare_for_edit_api(request):
@@ -107,7 +122,7 @@ try:
                 'error': str(e)
             }, status=500)
 
-    print("[PreviewBridgeExtended] Registered API endpoint: /preview-bridge-extended/prepare-for-edit")
+    _logger.debug("[PreviewBridgeExtended] Registered API endpoint: /preview-bridge-extended/prepare-for-edit")
 
     @server.PromptServer.instance.routes.post("/preview-bridge-extended/get-preview")
     async def get_preview_api(request):
@@ -154,10 +169,10 @@ try:
                 'error': str(e)
             }, status=500)
 
-    print("[PreviewBridgeExtended] Registered API endpoint: /preview-bridge-extended/get-preview")
+    _logger.debug("[PreviewBridgeExtended] Registered API endpoint: /preview-bridge-extended/get-preview")
 
 except Exception as e:
-    print(f"[PreviewBridgeExtended] Warning: Could not register API endpoint: {e}")
+    _logger.warning(f"[PreviewBridgeExtended] Could not register API endpoints: {e}")
 
 # Display version info on load
 print(f"[PreviewBridgeExtended] Loaded v{__version__}")

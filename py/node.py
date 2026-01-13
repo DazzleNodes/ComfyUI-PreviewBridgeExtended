@@ -10,6 +10,9 @@ import torch
 from typing import Tuple, Optional, Dict, Any
 import folder_paths
 
+# Use named logger so PBE_DEBUG environment variable works
+logger = logging.getLogger("PreviewBridgeExtended")
+
 from .utils import is_clipspace_path, load_mask_from_clipspace, register_clipspace_image
 from .mask_ops import is_mask_empty, resize_mask, process_input_mask, compute_tensor_fingerprint
 from .caches import (
@@ -156,10 +159,10 @@ class PreviewBridgeExtended:
         target_size = (height, width)
 
         # DIAGNOSTIC: Log widget values and IMAGE DIMENSIONS received by process()
-        logging.info(f"[PreviewBridgeExtended] process() called: unique_id={unique_id}")
-        logging.info(f"[PreviewBridgeExtended] process() IMAGE: {width}x{height} (shape={images.shape})")
-        logging.info(f"[PreviewBridgeExtended] process() WIDGETS: mask_output='{mask_output}', "
-                     f"editor_target='{editor_target}', restore_mask='{restore_mask}', block='{block}'")
+        logger.debug(f"[PreviewBridgeExtended] process() called: unique_id={unique_id}")
+        logger.debug(f"[PreviewBridgeExtended] process() IMAGE: {width}x{height} (shape={images.shape})")
+        logger.debug(f"[PreviewBridgeExtended] process() WIDGETS: mask_output='{mask_output}', "
+                      f"editor_target='{editor_target}', restore_mask='{restore_mask}', block='{block}'")
 
         # Detect if images have changed
         images_changed = self._detect_images_changed(images, unique_id)
@@ -179,25 +182,25 @@ class PreviewBridgeExtended:
                     mask_h, mask_w = current_mask.shape[-2], current_mask.shape[-1]
                     sizes_match = (mask_h == height and mask_w == width)
                     if sizes_match:
-                        logging.info(f"[PreviewBridgeExtended] restore_mask=if_same_size: sizes match "
-                                    f"({mask_w}x{mask_h} == {width}x{height}), preserving layers")
+                        logger.debug(f"[PreviewBridgeExtended] restore_mask=if_same_size: sizes match "
+                                     f"({mask_w}x{mask_h} == {width}x{height}), preserving layers")
                     else:
-                        logging.info(f"[PreviewBridgeExtended] restore_mask=if_same_size: sizes differ "
-                                    f"({mask_w}x{mask_h} != {width}x{height}), clearing layers")
+                        logger.debug(f"[PreviewBridgeExtended] restore_mask=if_same_size: sizes differ "
+                                     f"({mask_w}x{mask_h} != {width}x{height}), clearing layers")
                 else:
                     sizes_match = False
                 layer_cache.validate_image(images, preserve_layers=sizes_match)
             else:  # never
                 layer_cache.validate_image(images, preserve_layers=False)
                 layer_cache.clear()
-                logging.info(f"[PreviewBridgeExtended] Image changed, LayerCache cleared (restore_mask=never)")
+                logger.debug(f"[PreviewBridgeExtended] Image changed, LayerCache cleared (restore_mask=never)")
         elif restore_mask == "never":
             # Even when images don't change, restore_mask=never means don't persist user edits
             # Clear additions/subtractions but keep upstream (that's from mask_opt, not user edits)
             if layer_cache.additions is not None or layer_cache.subtractions is not None:
                 layer_cache.additions = None
                 layer_cache.subtractions = None
-                logging.info(f"[PreviewBridgeExtended] restore_mask=never, cleared user edits (additions/subtractions)")
+                logger.debug(f"[PreviewBridgeExtended] restore_mask=never, cleared user edits (additions/subtractions)")
 
         # Handle clipspace registration when images haven't changed
         if not images_changed and image and image not in _preview_bridge_image_id_map:
@@ -239,7 +242,7 @@ class PreviewBridgeExtended:
                 editor_target=editor_target,
                 target_size=target_size
             )
-            logging.info(f"[PreviewBridgeExtended] LayerCache updated: {layer_cache.debug_info()}")
+            logger.debug(f"[PreviewBridgeExtended] LayerCache updated: {layer_cache.debug_info()}")
         else:
             layer_cache.last_editor_target = editor_target
 
@@ -251,10 +254,10 @@ class PreviewBridgeExtended:
 
         # Log final mask
         if final_mask is not None:
-            logging.info(f"[PreviewBridgeExtended] FINAL MASK (LayerCache): shape={final_mask.shape}, "
-                         f"sum={final_mask.sum().item():.2f}")
+            logger.debug(f"[PreviewBridgeExtended] FINAL MASK (LayerCache): shape={final_mask.shape}, "
+                          f"sum={final_mask.sum().item():.2f}")
         else:
-            logging.info(f"[PreviewBridgeExtended] FINAL MASK (LayerCache): None")
+            logger.debug(f"[PreviewBridgeExtended] FINAL MASK (LayerCache): None")
 
         # Create empty mask if none available
         if final_mask is None:
@@ -368,7 +371,7 @@ class PreviewBridgeExtended:
 
         changed = cached_fp != current_fp
         if changed:
-            logging.debug(f"[PreviewBridgeExtended] Images content changed: "
+            logger.debug(f"[PreviewBridgeExtended] Images content changed: "
                          f"old={cached_fp[:8] if cached_fp else 'None'}... "
                          f"new={current_fp[:8] if current_fp else 'None'}...")
         return changed
@@ -424,16 +427,16 @@ class PreviewBridgeExtended:
                 else:
                     # Different size - respect restore_mask setting
                     if restore_mask == "never":
-                        logging.info(f"[PreviewBridgeExtended] Clipspace size {mask_width}x{mask_height} differs from "
-                                    f"image {target_width}x{target_height}, restore_mask=never - clearing")
+                        logger.debug(f"[PreviewBridgeExtended] Clipspace size {mask_width}x{mask_height} differs from "
+                                     f"image {target_width}x{target_height}, restore_mask=never - clearing")
                         return None
                     elif restore_mask == "if_same_size":
-                        logging.info(f"[PreviewBridgeExtended] Clipspace size {mask_width}x{mask_height} differs from "
-                                    f"image {target_width}x{target_height}, restore_mask=if_same_size - clearing")
+                        logger.debug(f"[PreviewBridgeExtended] Clipspace size {mask_width}x{mask_height} differs from "
+                                     f"image {target_width}x{target_height}, restore_mask=if_same_size - clearing")
                         return None
                     elif restore_mask == "always":
-                        logging.info(f"[PreviewBridgeExtended] Clipspace size {mask_width}x{mask_height} differs from "
-                                    f"image {target_width}x{target_height}, restore_mask=always - resizing")
+                        logger.debug(f"[PreviewBridgeExtended] Clipspace size {mask_width}x{mask_height} differs from "
+                                     f"image {target_width}x{target_height}, restore_mask=always - resizing")
                         return resize_mask(clipspace_mask, target_size)
 
         # No clipspace available - check if we should restore from LayerCache

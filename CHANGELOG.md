@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3-alpha] - 2026-01-12
+
+### Changed
+- **Quieter Console Output**: Changed verbose diagnostic logging from INFO to DEBUG level
+  - Normal workflow runs now produce minimal console output
+  - Keeps single "Loaded v{version}" message on startup for visibility
+  - To enable debug logging, set environment variable: `PBE_DEBUG=1`
+  - Or programmatically: `logging.getLogger("PreviewBridgeExtended").setLevel(logging.DEBUG)`
+- **API Registration Logging**: Changed print statements to proper logging
+  - Success messages now use `logging.debug()` (silent by default)
+  - Failure messages use `logging.warning()` (always visible)
+
 ## [0.3.2-alpha] - 2026-01-12
 
 ### Fixed

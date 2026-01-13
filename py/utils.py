@@ -12,6 +12,9 @@ from PIL import Image, ImageOps
 from typing import Optional
 import folder_paths
 
+# Use named logger so PBE_DEBUG environment variable works
+logger = logging.getLogger("PreviewBridgeExtended")
+
 
 def is_clipspace_path(path: str) -> bool:
     """Check if a path looks like a clipspace file path."""
@@ -72,7 +75,7 @@ def load_mask_from_clipspace(clipspace_path: str) -> Optional[torch.Tensor]:
         else:
             return None
     except Exception as e:
-        logging.warning(f"[PreviewBridgeExtended] Error loading mask from clipspace: {e}")
+        logger.warning(f"[PreviewBridgeExtended] Error loading mask from clipspace: {e}")
         return None
 
 

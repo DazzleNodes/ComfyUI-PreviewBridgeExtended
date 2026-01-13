@@ -21,6 +21,9 @@ from dataclasses import dataclass, field
 from typing import Dict, Optional, Tuple
 import torch
 
+# Use named logger so PBE_DEBUG environment variable works
+logger = logging.getLogger("PreviewBridgeExtended")
+
 from .mask_ops import is_mask_empty, resize_mask, compute_tensor_fingerprint
 
 
@@ -132,13 +135,13 @@ class LayerCache:
         if self.image_fingerprint is not None and self.image_fingerprint != current_fingerprint:
             # Image CONTENT actually changed
             if preserve_layers:
-                logging.info(f"[LayerCache] Image CONTENT changed "
-                            f"(old={self.image_fingerprint[:8]}... new={current_fingerprint[:8]}...), "
-                            f"preserving layers for restoration")
+                logger.debug(f"[LayerCache] Image CONTENT changed "
+                             f"(old={self.image_fingerprint[:8]}... new={current_fingerprint[:8]}...), "
+                             f"preserving layers for restoration")
             else:
-                logging.info(f"[LayerCache] Image CONTENT changed "
-                            f"(old={self.image_fingerprint[:8]}... new={current_fingerprint[:8]}...), "
-                            f"invalidating all layers")
+                logger.debug(f"[LayerCache] Image CONTENT changed "
+                             f"(old={self.image_fingerprint[:8]}... new={current_fingerprint[:8]}...), "
+                             f"invalidating all layers")
                 self.upstream = None
                 self.additions = None
                 self.subtractions = None
@@ -147,7 +150,7 @@ class LayerCache:
             return False
 
         if self.image_fingerprint is None:
-            logging.debug(f"[LayerCache] Image fingerprint initialized: {current_fingerprint[:8]}...")
+            logger.debug(f"[LayerCache] Image fingerprint initialized: {current_fingerprint[:8]}...")
 
         self.image_fingerprint = current_fingerprint
         return True
@@ -171,7 +174,7 @@ class LayerCache:
 
         # Log fingerprint comparison for debugging
         if new_upstream is not None:
-            logging.debug(f"[LayerCache] Upstream fingerprint check: "
+            logger.debug(f"[LayerCache] Upstream fingerprint check: "
                          f"old={old_fingerprint[:8] if old_fingerprint else 'None'}... "
                          f"new={new_fingerprint[:8] if new_fingerprint else 'None'}... "
                          f"sum={new_upstream.sum().item():.2f}")
@@ -180,12 +183,12 @@ class LayerCache:
             # Content actually changed - reset subtractions
             if old_fingerprint is not None:
                 # Only log "changed" if we had a previous value (not first run)
-                logging.info(f"[LayerCache] Upstream CONTENT changed "
-                            f"(old={old_fingerprint[:8]}... new={new_fingerprint[:8] if new_fingerprint else 'None'}...), "
-                            f"preserving additions, resetting subtractions")
+                logger.debug(f"[LayerCache] Upstream CONTENT changed "
+                             f"(old={old_fingerprint[:8]}... new={new_fingerprint[:8] if new_fingerprint else 'None'}...), "
+                             f"preserving additions, resetting subtractions")
             else:
-                logging.info(f"[LayerCache] Upstream initialized "
-                            f"(fingerprint={new_fingerprint[:8] if new_fingerprint else 'None'}...)")
+                logger.debug(f"[LayerCache] Upstream initialized "
+                             f"(fingerprint={new_fingerprint[:8] if new_fingerprint else 'None'}...)")
 
             self.upstream = new_upstream
             self.upstream_hash = new_fingerprint
@@ -195,7 +198,7 @@ class LayerCache:
             # self.additions preserved
         else:
             # Same content, just update reference (no subtractions reset!)
-            logging.debug(f"[LayerCache] Upstream content unchanged "
+            logger.debug(f"[LayerCache] Upstream content unchanged "
                          f"(fingerprint={new_fingerprint[:8] if new_fingerprint else 'None'}...), "
                          f"preserving subtractions")
             self.upstream = new_upstream
@@ -306,9 +309,9 @@ def decompose_and_store(
     cache.on_upstream_change(upstream)
     cache.last_editor_target = editor_target
 
-    logging.info(f"[LayerCache] decompose_and_store: mode={editor_target}, "
-                f"clipspace_sum={clipspace.sum().item():.2f}, "
-                f"upstream_sum={upstream.sum().item() if upstream is not None else 0:.2f}")
+    logger.debug(f"[LayerCache] decompose_and_store: mode={editor_target}, "
+                 f"clipspace_sum={clipspace.sum().item():.2f}, "
+                 f"upstream_sum={upstream.sum().item() if upstream is not None else 0:.2f}")
 
     if editor_target == "combined":
         # Clipspace is the full combined state
@@ -325,21 +328,21 @@ def decompose_and_store(
             if is_mask_empty(cache.subtractions):
                 cache.subtractions = None
 
-            logging.info(f"[LayerCache] Decomposed combined: "
-                        f"additions={cache.additions.sum().item() if cache.additions is not None else 0:.2f}, "
-                        f"subtractions={cache.subtractions.sum().item() if cache.subtractions is not None else 0:.2f}")
+            logger.debug(f"[LayerCache] Decomposed combined: "
+                         f"additions={cache.additions.sum().item() if cache.additions is not None else 0:.2f}, "
+                         f"subtractions={cache.subtractions.sum().item() if cache.subtractions is not None else 0:.2f}")
         else:
             # No upstream - all of clipspace is additions
             cache.additions = clipspace
             cache.subtractions = None
-            logging.info(f"[LayerCache] No upstream, all additions: sum={clipspace.sum().item():.2f}")
+            logger.debug(f"[LayerCache] No upstream, all additions: sum={clipspace.sum().item():.2f}")
 
     elif editor_target == "mask_editor":
         # Clipspace contains only additions (user was editing orange layer)
         cache.additions = clipspace
         # Preserve existing subtractions (user was editing different layer)
-        logging.info(f"[LayerCache] mask_editor mode: additions={clipspace.sum().item():.2f}, "
-                    f"subtractions preserved={cache.subtractions.sum().item() if cache.subtractions is not None else 0:.2f}")
+        logger.debug(f"[LayerCache] mask_editor mode: additions={clipspace.sum().item():.2f}, "
+                     f"subtractions preserved={cache.subtractions.sum().item() if cache.subtractions is not None else 0:.2f}")
 
     elif editor_target == "input_mask":
         # Clipspace contains the current input state (upstream - subtractions)
@@ -348,13 +351,13 @@ def decompose_and_store(
             cache.subtractions = torch.clamp(upstream - clipspace, 0, 1)
             if is_mask_empty(cache.subtractions):
                 cache.subtractions = None
-            logging.info(f"[LayerCache] input_mask mode: subtractions={cache.subtractions.sum().item() if cache.subtractions is not None else 0:.2f}, "
-                        f"additions preserved={cache.additions.sum().item() if cache.additions is not None else 0:.2f}")
+            logger.debug(f"[LayerCache] input_mask mode: subtractions={cache.subtractions.sum().item() if cache.subtractions is not None else 0:.2f}, "
+                         f"additions preserved={cache.additions.sum().item() if cache.additions is not None else 0:.2f}")
         else:
             cache.subtractions = None
         # Preserve existing additions (user was editing different layer)
 
-    logging.info(f"[LayerCache] Final state: {cache.debug_info()}")
+    logger.debug(f"[LayerCache] Final state: {cache.debug_info()}")
 
     return cache
 

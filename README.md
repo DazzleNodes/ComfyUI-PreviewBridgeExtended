@@ -176,6 +176,28 @@ combined = torch.clamp(combined, 0, 1)
 
 When `mask_output` or `editor_target` widgets change, JavaScript listeners trigger an API call to regenerate the preview from the current LayerCache state. This provides WYSIWYG behavior without re-running the workflow.
 
+## Troubleshooting
+
+### Debug Logging
+
+By default, the node produces minimal console output. To enable verbose debug logging for troubleshooting:
+
+**Option 1: Environment Variable (Recommended)**
+```bash
+# Windows
+set PBE_DEBUG=1
+python main.py
+
+# Linux/Mac
+PBE_DEBUG=1 python main.py
+```
+
+**Option 2: Python Code**
+```python
+import logging
+logging.getLogger("PreviewBridgeExtended").setLevel(logging.DEBUG)
+```
+
 ## Development
 
 This project uses Git-RepoKit hooks for automatic version tracking.
