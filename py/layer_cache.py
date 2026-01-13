@@ -110,7 +110,7 @@ class LayerCache:
         """
         return self.additions
 
-    def validate_image(self, images: torch.Tensor) -> bool:
+    def validate_image(self, images: torch.Tensor, preserve_layers: bool = False) -> bool:
         """
         Check if cache is valid for current image. Invalidate if image changed.
 
@@ -120,6 +120,9 @@ class LayerCache:
 
         Args:
             images: Current input images tensor
+            preserve_layers: If True, keep additions/subtractions for cross-image restoration.
+                           Used when restore_mask="always" or "if_same_size" to allow
+                           the restoration fallback path to access cached layers.
 
         Returns:
             True if cache is valid, False if cache was invalidated
@@ -127,14 +130,19 @@ class LayerCache:
         current_fingerprint = compute_tensor_fingerprint(images)
 
         if self.image_fingerprint is not None and self.image_fingerprint != current_fingerprint:
-            # Image CONTENT actually changed - invalidate all layers
-            logging.info(f"[LayerCache] Image CONTENT changed "
-                        f"(old={self.image_fingerprint[:8]}... new={current_fingerprint[:8]}...), "
-                        f"invalidating all layers")
-            self.upstream = None
-            self.additions = None
-            self.subtractions = None
-            self.upstream_hash = None
+            # Image CONTENT actually changed
+            if preserve_layers:
+                logging.info(f"[LayerCache] Image CONTENT changed "
+                            f"(old={self.image_fingerprint[:8]}... new={current_fingerprint[:8]}...), "
+                            f"preserving layers for restoration")
+            else:
+                logging.info(f"[LayerCache] Image CONTENT changed "
+                            f"(old={self.image_fingerprint[:8]}... new={current_fingerprint[:8]}...), "
+                            f"invalidating all layers")
+                self.upstream = None
+                self.additions = None
+                self.subtractions = None
+                self.upstream_hash = None
             self.image_fingerprint = current_fingerprint
             return False
 

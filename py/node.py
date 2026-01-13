@@ -155,8 +155,9 @@ class PreviewBridgeExtended:
         batch, height, width, channels = images.shape
         target_size = (height, width)
 
-        # DIAGNOSTIC: Log widget values received by process()
+        # DIAGNOSTIC: Log widget values and IMAGE DIMENSIONS received by process()
         logging.info(f"[PreviewBridgeExtended] process() called: unique_id={unique_id}")
+        logging.info(f"[PreviewBridgeExtended] process() IMAGE: {width}x{height} (shape={images.shape})")
         logging.info(f"[PreviewBridgeExtended] process() WIDGETS: mask_output='{mask_output}', "
                      f"editor_target='{editor_target}', restore_mask='{restore_mask}', block='{block}'")
 
@@ -168,9 +169,26 @@ class PreviewBridgeExtended:
 
         # Handle image change - validate LayerCache
         if images_changed:
-            layer_cache.validate_image(images)
-            if restore_mask == "never":
-                # Clear LayerCache when images change and restore is disabled
+            if restore_mask == "always":
+                # Always preserve for cross-image restoration (will resize)
+                layer_cache.validate_image(images, preserve_layers=True)
+            elif restore_mask == "if_same_size":
+                # Only preserve if current mask size matches new image size
+                current_mask = layer_cache.get_combined()
+                if current_mask is not None:
+                    mask_h, mask_w = current_mask.shape[-2], current_mask.shape[-1]
+                    sizes_match = (mask_h == height and mask_w == width)
+                    if sizes_match:
+                        logging.info(f"[PreviewBridgeExtended] restore_mask=if_same_size: sizes match "
+                                    f"({mask_w}x{mask_h} == {width}x{height}), preserving layers")
+                    else:
+                        logging.info(f"[PreviewBridgeExtended] restore_mask=if_same_size: sizes differ "
+                                    f"({mask_w}x{mask_h} != {width}x{height}), clearing layers")
+                else:
+                    sizes_match = False
+                layer_cache.validate_image(images, preserve_layers=sizes_match)
+            else:  # never
+                layer_cache.validate_image(images, preserve_layers=False)
                 layer_cache.clear()
                 logging.info(f"[PreviewBridgeExtended] Image changed, LayerCache cleared (restore_mask=never)")
         elif restore_mask == "never":
@@ -395,12 +413,28 @@ class PreviewBridgeExtended:
                     # User erased the mask - return None, don't fall back to cache
                     return None
 
-                # Resize if needed and return
+                # Get clipspace dimensions
                 mask_height = clipspace_mask.shape[1] if len(clipspace_mask.shape) == 3 else clipspace_mask.shape[0]
                 mask_width = clipspace_mask.shape[2] if len(clipspace_mask.shape) == 3 else clipspace_mask.shape[1]
-                if mask_height != target_height or mask_width != target_width:
-                    return resize_mask(clipspace_mask, target_size)
-                return clipspace_mask
+                sizes_match = (mask_height == target_height and mask_width == target_width)
+
+                if sizes_match:
+                    # Same size - return clipspace directly
+                    return clipspace_mask
+                else:
+                    # Different size - respect restore_mask setting
+                    if restore_mask == "never":
+                        logging.info(f"[PreviewBridgeExtended] Clipspace size {mask_width}x{mask_height} differs from "
+                                    f"image {target_width}x{target_height}, restore_mask=never - clearing")
+                        return None
+                    elif restore_mask == "if_same_size":
+                        logging.info(f"[PreviewBridgeExtended] Clipspace size {mask_width}x{mask_height} differs from "
+                                    f"image {target_width}x{target_height}, restore_mask=if_same_size - clearing")
+                        return None
+                    elif restore_mask == "always":
+                        logging.info(f"[PreviewBridgeExtended] Clipspace size {mask_width}x{mask_height} differs from "
+                                    f"image {target_width}x{target_height}, restore_mask=always - resizing")
+                        return resize_mask(clipspace_mask, target_size)
 
         # No clipspace available - check if we should restore from LayerCache
         if restore_mask == "never":
