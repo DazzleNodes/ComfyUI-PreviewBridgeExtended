@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2-alpha] - 2026-01-12
+
+### Fixed
+- **restore_mask Clipspace Bypass**: Fixed clipspace file bypassing restore_mask setting
+  - Root cause: Clipspace file persists on disk across image changes
+  - When loading clipspace, it was resized to new image dimensions regardless of restore_mask
+  - Solution: Check restore_mask setting before resizing clipspace when dimensions differ
+  - Now `if_same_size` correctly clears mask when image dimensions change
+  - `never` also correctly clears when clipspace size differs from image
+  - `always` continues to resize and restore as expected
+
+- **restore_mask=always LayerCache Preservation**: Fixed masks being cleared instead of resized
+  - Root cause: `validate_image()` cleared LayerCache layers before restoration could occur
+  - When image changed, layers were invalidated before `_load_clipspace_mask()` could fall back to them
+  - Solution: Added `preserve_layers` parameter to `validate_image()`
+  - `restore_mask=always` and `if_same_size` now preserve layers for cross-image restoration
+  - Layers are only cleared when `restore_mask=never`
+
 ## [0.3.1-alpha] - 2026-01-12
 
 ### Fixed
