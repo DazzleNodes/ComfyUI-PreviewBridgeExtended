@@ -12,10 +12,11 @@
  *
  * @param {string} nodeId - Node unique ID
  * @param {string} editorTarget - Current editor_target widget value
+ * @param {boolean} invertInputMask - Current invert_input_mask widget value
  * @returns {Promise<{success: boolean, image_data?: string, error?: string}>}
  */
-export async function prepareForEdit(nodeId, editorTarget) {
-    console.log("[PreviewBridgeExtended API] prepareForEdit called:", { nodeId, editorTarget });
+export async function prepareForEdit(nodeId, editorTarget, invertInputMask) {
+    console.log("[PreviewBridgeExtended API] prepareForEdit called:", { nodeId, editorTarget, invertInputMask });
 
     try {
         const response = await fetch('/preview-bridge-extended/prepare-for-edit', {
@@ -25,7 +26,8 @@ export async function prepareForEdit(nodeId, editorTarget) {
             },
             body: JSON.stringify({
                 node_id: nodeId.toString(),
-                editor_target: editorTarget
+                editor_target: editorTarget,
+                invert_input_mask: invertInputMask
             })
         });
 
@@ -58,11 +60,13 @@ export async function prepareForEdit(nodeId, editorTarget) {
  * @param {string} clipspacePath - Path to clipspace file
  * @param {string} maskOutput - Current mask_output widget value
  * @param {string} editorTarget - Current editor_target widget value
+ * @param {boolean} invertInputMask - Current invert_input_mask widget value
+ * @param {boolean} invertOutputMask - Current invert_output_mask widget value
  * @returns {Promise<{success: boolean, image_data?: string, error?: string}>}
  */
-export async function refreshPreview(nodeId, clipspacePath, maskOutput, editorTarget) {
+export async function refreshPreview(nodeId, clipspacePath, maskOutput, editorTarget, invertInputMask, invertOutputMask) {
     console.log("[PreviewBridgeExtended API] refreshPreview called:", {
-        nodeId, clipspacePath, maskOutput, editorTarget
+        nodeId, clipspacePath, maskOutput, editorTarget, invertInputMask, invertOutputMask
     });
 
     try {
@@ -75,7 +79,9 @@ export async function refreshPreview(nodeId, clipspacePath, maskOutput, editorTa
                 node_id: nodeId.toString(),
                 clipspace_path: clipspacePath,
                 mask_output: maskOutput,
-                editor_target: editorTarget
+                editor_target: editorTarget,
+                invert_input_mask: invertInputMask,
+                invert_output_mask: invertOutputMask
             })
         });
 
@@ -142,11 +148,13 @@ export async function uploadImage(blob, filename, subfolder, type) {
  * @param {string} nodeId - Node unique ID
  * @param {string} maskOutput - Current mask_output widget value
  * @param {string} editorTarget - Current editor_target widget value
+ * @param {boolean} invertInputMask - Current invert_input_mask widget value
+ * @param {boolean} invertOutputMask - Current invert_output_mask widget value
  * @returns {Promise<{success: boolean, image_data?: string, error?: string}>}
  */
-export async function getPreview(nodeId, maskOutput, editorTarget) {
+export async function getPreview(nodeId, maskOutput, editorTarget, invertInputMask, invertOutputMask) {
     console.log("[PreviewBridgeExtended API] getPreview called:", {
-        nodeId, maskOutput, editorTarget
+        nodeId, maskOutput, editorTarget, invertInputMask, invertOutputMask
     });
 
     try {
@@ -158,7 +166,9 @@ export async function getPreview(nodeId, maskOutput, editorTarget) {
             body: JSON.stringify({
                 node_id: nodeId.toString(),
                 mask_output: maskOutput,
-                editor_target: editorTarget
+                editor_target: editorTarget,
+                invert_input_mask: invertInputMask,
+                invert_output_mask: invertOutputMask
             })
         });
 

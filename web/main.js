@@ -39,15 +39,19 @@ async function importComfyCore() {
  * Get current widget values from node.
  *
  * @param {object} node - ComfyUI node
- * @returns {{maskOutput: string, editorTarget: string}}
+ * @returns {{maskOutput: string, editorTarget: string, invertInputMask: boolean, invertOutputMask: boolean}}
  */
 function getWidgetValues(node) {
     const maskOutputWidget = node.widgets?.find(w => w.name === 'mask_output');
     const editorTargetWidget = node.widgets?.find(w => w.name === 'editor_target');
+    const invertInputMaskWidget = node.widgets?.find(w => w.name === 'invert_input_mask');
+    const invertOutputMaskWidget = node.widgets?.find(w => w.name === 'invert_output_mask');
 
     return {
         maskOutput: maskOutputWidget?.value || 'combined',
-        editorTarget: editorTargetWidget?.value || 'combined'
+        editorTarget: editorTargetWidget?.value || 'combined',
+        invertInputMask: !!invertInputMaskWidget?.value,
+        invertOutputMask: !!invertOutputMaskWidget?.value,
     };
 }
 
@@ -62,12 +66,12 @@ function getWidgetValues(node) {
  * @param {object} app - ComfyUI app instance
  */
 async function refreshPreviewOnWidgetChange(node, app) {
-    const { maskOutput, editorTarget } = getWidgetValues(node);
+    const { maskOutput, editorTarget, invertInputMask, invertOutputMask } = getWidgetValues(node);
 
-    console.log(`[PreviewBridgeExtended] Widget changed, refreshing preview: mask_output=${maskOutput}, editor_target=${editorTarget}`);
+    console.log(`[PreviewBridgeExtended] Widget changed, refreshing preview: mask_output=${maskOutput}, editor_target=${editorTarget}, invert_input_mask=${invertInputMask}, invert_output_mask=${invertOutputMask}`);
 
     try {
-        const result = await getPreview(node.id.toString(), maskOutput, editorTarget);
+        const result = await getPreview(node.id.toString(), maskOutput, editorTarget, invertInputMask, invertOutputMask);
 
         if (result.success && result.image_data) {
             const previewImg = new Image();
@@ -121,6 +125,8 @@ function setupPreviewBridgeExtendedNode(node, app) {
     // When mask_output or editor_target change, refresh preview from LayerCache
     const maskOutputWidget = node.widgets.find(w => w.name === 'mask_output');
     const editorTargetWidget = node.widgets.find(w => w.name === 'editor_target');
+    const invertInputMaskWidget = node.widgets.find(w => w.name === 'invert_input_mask');
+    const invertOutputMaskWidget = node.widgets.find(w => w.name === 'invert_output_mask');
 
     if (maskOutputWidget) {
         const origMaskOutputCallback = maskOutputWidget.callback;
@@ -137,6 +143,26 @@ function setupPreviewBridgeExtendedNode(node, app) {
         editorTargetWidget.callback = async (value) => {
             if (origEditorTargetCallback) {
                 origEditorTargetCallback.call(editorTargetWidget, value);
+            }
+            await refreshPreviewOnWidgetChange(node, app);
+        };
+    }
+
+    if (invertInputMaskWidget) {
+        const origInvertInputCallback = invertInputMaskWidget.callback;
+        invertInputMaskWidget.callback = async (value) => {
+            if (origInvertInputCallback) {
+                origInvertInputCallback.call(invertInputMaskWidget, value);
+            }
+            await refreshPreviewOnWidgetChange(node, app);
+        };
+    }
+
+    if (invertOutputMaskWidget) {
+        const origInvertOutputCallback = invertOutputMaskWidget.callback;
+        invertOutputMaskWidget.callback = async (value) => {
+            if (origInvertOutputCallback) {
+                origInvertOutputCallback.call(invertOutputMaskWidget, value);
             }
             await refreshPreviewOnWidgetChange(node, app);
         };

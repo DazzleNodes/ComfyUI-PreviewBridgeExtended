@@ -53,6 +53,8 @@ try:
             clipspace_path = data.get('clipspace_path')
             mask_output = data.get('mask_output')  # Optional override from JS
             editor_target = data.get('editor_target')  # Optional override from JS
+            invert_input_mask = data.get('invert_input_mask')  # Optional override from JS
+            invert_output_mask = data.get('invert_output_mask')  # Optional override from JS
 
             if not node_id:
                 return web.json_response({
@@ -70,7 +72,9 @@ try:
             result = generate_preview_for_api(
                 str(node_id), clipspace_path,
                 mask_output_override=mask_output,
-                editor_target_override=editor_target
+                editor_target_override=editor_target,
+                invert_input_override=invert_input_mask,
+                invert_output_override=invert_output_mask
             )
 
             if result.get('success'):
@@ -101,6 +105,7 @@ try:
             data = await request.json()
             node_id = data.get('node_id')
             editor_target = data.get('editor_target')  # Current widget value from JS
+            invert_input_mask = data.get('invert_input_mask')  # Optional override from JS
 
             if not node_id:
                 return web.json_response({
@@ -109,7 +114,11 @@ try:
                 }, status=400)
 
             # Generate the editable preview with current editor_target
-            result = prepare_for_editing(str(node_id), editor_target_override=editor_target)
+            result = prepare_for_editing(
+                str(node_id),
+                editor_target_override=editor_target,
+                invert_input_override=invert_input_mask,
+            )
 
             if result.get('success'):
                 return web.json_response(result)
@@ -144,6 +153,8 @@ try:
             node_id = data.get('node_id')
             mask_output = data.get('mask_output')
             editor_target = data.get('editor_target')
+            invert_input_mask = data.get('invert_input_mask')
+            invert_output_mask = data.get('invert_output_mask')
 
             if not node_id:
                 return web.json_response({
@@ -155,7 +166,9 @@ try:
             result = get_preview_for_api(
                 str(node_id),
                 mask_output_override=mask_output,
-                editor_target_override=editor_target
+                editor_target_override=editor_target,
+                invert_input_override=invert_input_mask,
+                invert_output_override=invert_output_mask,
             )
 
             if result.get('success'):

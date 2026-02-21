@@ -20,17 +20,19 @@ from typing import Optional, Dict, Any
 logger = logging.getLogger("PreviewBridgeExtended")
 
 from .utils import load_mask_from_clipspace
-from .mask_ops import is_mask_empty
+from .mask_ops import is_mask_empty, invert_mask
 from .caches import get_context_cache, _preview_bridge_context_cache
 from .preview import apply_mask_overlays
-from .layer_cache import get_layer_cache, decompose_and_store, get_preview_masks
+from .layer_cache import get_layer_cache, decompose_and_store, get_preview_masks, get_output_mask
 
 
 def generate_preview_for_api(
     node_id: str,
     clipspace_path: str,
     mask_output_override: str = None,
-    editor_target_override: str = None
+    editor_target_override: str = None,
+    invert_input_override: Optional[bool] = None,
+    invert_output_override: Optional[bool] = None
 ) -> Optional[Dict[str, Any]]:
     """
     Generate a colored preview image for a given node using cached context.
@@ -62,6 +64,8 @@ def generate_preview_for_api(
     # Use overrides from JS if provided, otherwise fall back to cached values
     mask_output = mask_output_override if mask_output_override else context.get('mask_output', 'combined')
     editor_target = editor_target_override if editor_target_override else context.get('editor_target', 'mask_editor')
+    invert_input_mask = invert_input_override if invert_input_override is not None else context.get('invert_input_mask', False)
+    invert_output_mask = invert_output_override if invert_output_override is not None else context.get('invert_output_mask', False)
 
     if images is None:
         return {
@@ -103,6 +107,8 @@ def generate_preview_for_api(
         if node_id in _preview_bridge_context_cache:
             _preview_bridge_context_cache[node_id]['layer_cache'] = layer_cache
             _preview_bridge_context_cache[node_id]['editor_target'] = editor_target
+            _preview_bridge_context_cache[node_id]['invert_input_mask'] = invert_input_mask
+            _preview_bridge_context_cache[node_id]['invert_output_mask'] = invert_output_mask
     else:
         # Clipspace is empty - user clicked Clear button or erased all mask content
         # Clear the appropriate layer(s) based on editor_target mode
@@ -138,12 +144,18 @@ def generate_preview_for_api(
         if node_id in _preview_bridge_context_cache:
             _preview_bridge_context_cache[node_id]['layer_cache'] = layer_cache
             _preview_bridge_context_cache[node_id]['editor_target'] = editor_target
+            _preview_bridge_context_cache[node_id]['invert_input_mask'] = invert_input_mask
+            _preview_bridge_context_cache[node_id]['invert_output_mask'] = invert_output_mask
 
     # =====================================================
     # GET PREVIEW MASKS FROM LAYERCACHE
     # Simple, unified preview selection
     # =====================================================
     preview_input_mask, preview_editor_mask = get_preview_masks(node_id, mask_output)
+
+    if invert_output_mask:
+        preview_input_mask = invert_mask(get_output_mask(node_id, mask_output))
+        preview_editor_mask = None
 
     # Check if we have any masks to overlay
     input_empty = is_mask_empty(preview_input_mask)
@@ -192,7 +204,9 @@ def generate_preview_for_api(
 def get_preview_for_api(
     node_id: str,
     mask_output_override: str = None,
-    editor_target_override: str = None
+    editor_target_override: str = None,
+    invert_input_override: Optional[bool] = None,
+    invert_output_override: Optional[bool] = None
 ) -> Optional[Dict[str, Any]]:
     """
     Get current preview from LayerCache state without clipspace decomposition.
@@ -223,6 +237,8 @@ def get_preview_for_api(
     # Use overrides from JS if provided, otherwise fall back to cached values
     mask_output = mask_output_override if mask_output_override else context.get('mask_output', 'combined')
     editor_target = editor_target_override if editor_target_override else context.get('editor_target', 'mask_editor')
+    invert_input_mask = invert_input_override if invert_input_override is not None else context.get('invert_input_mask', False)
+    invert_output_mask = invert_output_override if invert_output_override is not None else context.get('invert_output_mask', False)
 
     if images is None:
         return {
@@ -235,6 +251,10 @@ def get_preview_for_api(
 
     # Get preview masks from existing LayerCache state (no decomposition)
     preview_input_mask, preview_editor_mask = get_preview_masks(node_id, mask_output)
+
+    if invert_output_mask:
+        preview_input_mask = invert_mask(get_output_mask(node_id, mask_output))
+        preview_editor_mask = None
 
     # Check if we have any masks to overlay
     input_empty = is_mask_empty(preview_input_mask)
@@ -280,7 +300,11 @@ def get_preview_for_api(
     }
 
 
-def prepare_for_editing(node_id: str, editor_target_override: str = None) -> Optional[Dict[str, Any]]:
+def prepare_for_editing(
+    node_id: str,
+    editor_target_override: str = None,
+    invert_input_override: Optional[bool] = None
+) -> Optional[Dict[str, Any]]:
     """
     Prepare an image for MaskEditor by putting the editable mask(s) in alpha.
 
@@ -311,6 +335,7 @@ def prepare_for_editing(node_id: str, editor_target_override: str = None) -> Opt
 
     # Use override from JS if provided, otherwise fall back to cached value
     editor_target = editor_target_override if editor_target_override else cached_editor_target
+    invert_input_mask = invert_input_override if invert_input_override is not None else context.get('invert_input_mask', False)
 
     if images is None:
         return {

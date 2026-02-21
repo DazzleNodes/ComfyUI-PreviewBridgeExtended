@@ -14,7 +14,7 @@ import folder_paths
 logger = logging.getLogger("PreviewBridgeExtended")
 
 from .utils import is_clipspace_path, load_mask_from_clipspace, register_clipspace_image
-from .mask_ops import is_mask_empty, resize_mask, process_input_mask, compute_tensor_fingerprint
+from .mask_ops import is_mask_empty, resize_mask, process_input_mask, compute_tensor_fingerprint, invert_mask
 from .caches import (
     get_cache, set_cache,
     get_original_input_cache, set_original_input_cache, delete_original_input_cache,
@@ -83,6 +83,20 @@ class PreviewBridgeExtended:
                         )
                     }
                 ),
+                "invert_input_mask": (
+                    "BOOLEAN",
+                    {
+                        "default": False,
+                        "tooltip": "Invert input mask before LayerCache processing (Comfy Core InvertMask logic: 1.0 - mask)."
+                    }
+                ),
+                "invert_output_mask": (
+                    "BOOLEAN",
+                    {
+                        "default": False,
+                        "tooltip": "Invert final output mask after mask_output selection (Comfy Core InvertMask logic: 1.0 - mask)."
+                    }
+                ),
                 "block": (
                     ["never", "if_empty_mask", "if_empty_editor", "always"],
                     {
@@ -126,6 +140,8 @@ class PreviewBridgeExtended:
         mask_output: str = "combined",
         editor_target: str = "mask_editor",
         restore_mask: str = "never",
+        invert_input_mask: bool = False,
+        invert_output_mask: bool = False,
         block: str = "never",
         unique_id: str = "",
         prompt=None,
@@ -162,7 +178,9 @@ class PreviewBridgeExtended:
         logger.debug(f"[PreviewBridgeExtended] process() called: unique_id={unique_id}")
         logger.debug(f"[PreviewBridgeExtended] process() IMAGE: {width}x{height} (shape={images.shape})")
         logger.debug(f"[PreviewBridgeExtended] process() WIDGETS: mask_output='{mask_output}', "
-                      f"editor_target='{editor_target}', restore_mask='{restore_mask}', block='{block}'")
+                      f"editor_target='{editor_target}', restore_mask='{restore_mask}', "
+                      f"invert_input_mask={invert_input_mask}, invert_output_mask={invert_output_mask}, "
+                      f"block='{block}'")
 
         # Detect if images have changed
         images_changed = self._detect_images_changed(images, unique_id)
@@ -209,6 +227,11 @@ class PreviewBridgeExtended:
 
         # Process input mask from upstream (mask_opt)
         upstream_input_mask = process_input_mask(mask_opt, target_size)
+
+        # Optional inverter (same logic as Comfy Core InvertMask: 1.0 - mask)
+        if invert_input_mask and upstream_input_mask is not None:
+            upstream_input_mask = invert_mask(upstream_input_mask)
+
         upstream_input_valid = not is_mask_empty(upstream_input_mask)
 
         # Update LayerCache with upstream (handles change detection internally)
@@ -252,6 +275,10 @@ class PreviewBridgeExtended:
         # =====================================================
         final_mask = get_output_mask(unique_id, mask_output)
 
+        # Optional inverter (same logic as Comfy Core InvertMask: 1.0 - mask)
+        if invert_output_mask and final_mask is not None:
+            final_mask = invert_mask(final_mask)
+
         # Log final mask
         if final_mask is not None:
             logger.debug(f"[PreviewBridgeExtended] FINAL MASK (LayerCache): shape={final_mask.shape}, "
@@ -292,6 +319,8 @@ class PreviewBridgeExtended:
             'original_input_mask': get_original_input_cache(unique_id),
             'mask_output': mask_output,
             'editor_target': editor_target,
+            'invert_input_mask': invert_input_mask,
+            'invert_output_mask': invert_output_mask,
             'layer_cache': layer_cache,
         })
 
@@ -300,6 +329,10 @@ class PreviewBridgeExtended:
         # Simple, unified preview selection
         # =====================================================
         preview_input_mask, preview_editor_mask = get_preview_masks(unique_id, mask_output)
+
+        if invert_output_mask:
+            preview_input_mask = final_mask
+            preview_editor_mask = None
 
         # Save preview images with separate mask overlays
         preview_result = save_preview_images(

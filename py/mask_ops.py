@@ -140,6 +140,24 @@ def process_input_mask(
     return resize_mask(mask, target_size)
 
 
+def invert_mask(mask: Optional[torch.Tensor]) -> Optional[torch.Tensor]:
+    """
+    Invert a mask using Comfy Core InvertMask logic.
+
+    Core logic is a direct subtraction: 1.0 - mask.
+
+    Args:
+        mask: Input mask tensor or None
+
+    Returns:
+        Inverted mask tensor, or None if input is None
+    """
+    if mask is None:
+        return None
+
+    return 1.0 - mask
+
+
 def combine_masks_or(
     mask1: Optional[torch.Tensor],
     mask2: Optional[torch.Tensor],

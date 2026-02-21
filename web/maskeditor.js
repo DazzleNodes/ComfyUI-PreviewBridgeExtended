@@ -15,15 +15,19 @@ import { prepareForEdit, refreshPreview, getPreview, uploadImage, dataUriToBlob 
  * Get current widget values from node.
  *
  * @param {object} node - ComfyUI node
- * @returns {{maskOutput: string, editorTarget: string}}
+ * @returns {{maskOutput: string, editorTarget: string, invertInputMask: boolean, invertOutputMask: boolean}}
  */
 function getWidgetValues(node) {
     const maskOutputWidget = node.widgets?.find(w => w.name === 'mask_output');
     const editorTargetWidget = node.widgets?.find(w => w.name === 'editor_target');
+    const invertInputMaskWidget = node.widgets?.find(w => w.name === 'invert_input_mask');
+    const invertOutputMaskWidget = node.widgets?.find(w => w.name === 'invert_output_mask');
 
     return {
         maskOutput: maskOutputWidget?.value || 'combined',
-        editorTarget: editorTargetWidget?.value || 'combined'
+        editorTarget: editorTargetWidget?.value || 'combined',
+        invertInputMask: !!invertInputMaskWidget?.value,
+        invertOutputMask: !!invertOutputMaskWidget?.value,
     };
 }
 
@@ -68,8 +72,8 @@ export function setupMaskEditorCloseDetection(node, imageWidget, app) {
                 imageWidget.value = node._pbeOriginalWidgetValue;
 
                 // Call Python API to get correct preview from LayerCache
-                const { maskOutput, editorTarget } = getWidgetValues(node);
-                getPreview(node.id.toString(), maskOutput, editorTarget).then(result => {
+                const { maskOutput, editorTarget, invertInputMask, invertOutputMask } = getWidgetValues(node);
+                getPreview(node.id.toString(), maskOutput, editorTarget, invertInputMask, invertOutputMask).then(result => {
                     if (result.success && result.image_data) {
                         const previewImg = new Image();
                         previewImg.onload = () => {
@@ -124,11 +128,11 @@ export async function handleMaskEditorOpen(node, imageWidget, app, originalCallb
     node._pbeSaveDetected = false;
 
     // Get current editor_target from widget (not stale cache)
-    const { editorTarget } = getWidgetValues(node);
+    const { editorTarget, invertInputMask } = getWidgetValues(node);
     console.log("[PreviewBridgeExtended] Current editor_target from widget:", editorTarget);
 
     // Call Python API to prepare image with editable alpha
-    const result = await prepareForEdit(node.id.toString(), editorTarget);
+    const result = await prepareForEdit(node.id.toString(), editorTarget, invertInputMask);
 
     if (result.success && result.image_data) {
         console.log("[PreviewBridgeExtended] Got editable image, uploading to clipspace...");
@@ -216,14 +220,16 @@ export async function handleMaskEditorSave(node, imageWidget, app, src) {
             imageWidget.value = clipspacePath;
 
             // Get current widget values
-            const { maskOutput, editorTarget } = getWidgetValues(node);
+            const { maskOutput, editorTarget, invertInputMask, invertOutputMask } = getWidgetValues(node);
 
             // Call Python API to get colored preview
             const apiResult = await refreshPreview(
                 node.id.toString(),
                 clipspacePath,
                 maskOutput,
-                editorTarget
+                editorTarget,
+                invertInputMask,
+                invertOutputMask
             );
 
             if (apiResult.success && apiResult.image_data) {
