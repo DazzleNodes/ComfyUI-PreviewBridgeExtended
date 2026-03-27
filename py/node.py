@@ -124,7 +124,7 @@ class PreviewBridgeExtended:
         image: str = "",
         mask_opt: Optional[torch.Tensor] = None,
         mask_output: str = "combined",
-        editor_target: str = "mask_editor",
+        editor_target: str = "combined",
         restore_mask: str = "never",
         block: str = "never",
         unique_id: str = "",
@@ -158,11 +158,14 @@ class PreviewBridgeExtended:
         batch, height, width, channels = images.shape
         target_size = (height, width)
 
-        # DIAGNOSTIC: Log widget values and IMAGE DIMENSIONS received by process()
+        # DIAGNOSTIC: Log all inputs received by process()
         logger.debug(f"[PreviewBridgeExtended] process() called: unique_id={unique_id}")
         logger.debug(f"[PreviewBridgeExtended] process() IMAGE: {width}x{height} (shape={images.shape})")
         logger.debug(f"[PreviewBridgeExtended] process() WIDGETS: mask_output='{mask_output}', "
                       f"editor_target='{editor_target}', restore_mask='{restore_mask}', block='{block}'")
+        logger.debug(f"[PreviewBridgeExtended] process() mask_opt: "
+                      f"{'None' if mask_opt is None else f'shape={mask_opt.shape}, sum={mask_opt.sum().item():.2f}'}")
+        logger.debug(f"[PreviewBridgeExtended] process() image widget: '{image}'")
 
         # Detect if images have changed
         images_changed = self._detect_images_changed(images, unique_id)
@@ -213,6 +216,7 @@ class PreviewBridgeExtended:
 
         # Update LayerCache with upstream (handles change detection internally)
         layer_cache.on_upstream_change(upstream_input_mask)
+        logger.debug(f"[PreviewBridgeExtended] After on_upstream_change: {layer_cache.debug_info()}")
 
         # Store original input mask for preview coloring
         if upstream_input_valid:
@@ -229,6 +233,8 @@ class PreviewBridgeExtended:
             clipspace_path=image
         )
         clipspace_mask_valid = not is_mask_empty(clipspace_mask)
+        logger.debug(f"[PreviewBridgeExtended] clipspace_mask: "
+                      f"{'None/empty' if not clipspace_mask_valid else f'shape={clipspace_mask.shape}, sum={clipspace_mask.sum().item():.2f}'}")
 
         # =====================================================
         # LAYERCACHE: Decompose clipspace into canonical layers
@@ -286,6 +292,7 @@ class PreviewBridgeExtended:
         )
 
         # Cache context for API preview refresh (JS-Python communication)
+        logger.debug(f"[PreviewBridgeExtended] Setting context cache for key='{unique_id}' (type={type(unique_id).__name__})")
         set_context_cache(unique_id, {
             'images': images,
             'upstream_input_mask': upstream_input_mask,

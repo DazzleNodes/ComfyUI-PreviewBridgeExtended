@@ -21,7 +21,7 @@ logger = logging.getLogger("PreviewBridgeExtended")
 
 from .utils import load_mask_from_clipspace
 from .mask_ops import is_mask_empty
-from .caches import get_context_cache, _preview_bridge_context_cache
+from .caches import get_context_cache, get_cache, get_original_input_cache, _preview_bridge_context_cache
 from .preview import apply_mask_overlays
 from .layer_cache import get_layer_cache, decompose_and_store, get_preview_masks
 
@@ -61,7 +61,7 @@ def generate_preview_for_api(
 
     # Use overrides from JS if provided, otherwise fall back to cached values
     mask_output = mask_output_override if mask_output_override else context.get('mask_output', 'combined')
-    editor_target = editor_target_override if editor_target_override else context.get('editor_target', 'mask_editor')
+    editor_target = editor_target_override if editor_target_override else context.get('editor_target', 'combined')
 
     if images is None:
         return {
@@ -222,7 +222,7 @@ def get_preview_for_api(
 
     # Use overrides from JS if provided, otherwise fall back to cached values
     mask_output = mask_output_override if mask_output_override else context.get('mask_output', 'combined')
-    editor_target = editor_target_override if editor_target_override else context.get('editor_target', 'mask_editor')
+    editor_target = editor_target_override if editor_target_override else context.get('editor_target', 'combined')
 
     if images is None:
         return {
@@ -294,16 +294,34 @@ def prepare_for_editing(node_id: str, editor_target_override: str = None) -> Opt
     Returns:
         Dict with 'success', 'image_data' (base64 PNG), or 'error'
     """
-    logger.debug(f"[PreviewBridgeExtended] prepare_for_editing called for node {node_id}, override={editor_target_override}")
+    logger.debug(f"[PreviewBridgeExtended] prepare_for_editing called for node {node_id} (type={type(node_id).__name__}), override={editor_target_override}")
+    logger.debug(f"[PreviewBridgeExtended] context cache keys: {list(_preview_bridge_context_cache.keys())}")
 
     # Get cached context for this node
     context = get_context_cache(node_id)
     if context is None:
-        logger.warning(f"[PreviewBridgeExtended] No cached context for node {node_id}")
-        return {
-            'success': False,
-            'error': f'No cached context for node {node_id}. Run workflow first.'
-        }
+        # Fallback: reconstruct context from individual caches
+        # This handles cases where context cache was lost (e.g., .pyc staleness,
+        # module reload) but LayerCache and basic caches are still valid
+        logger.warning(f"[PreviewBridgeExtended] No context cache for node {node_id}, "
+                       f"attempting fallback from individual caches")
+        basic_cache = get_cache(node_id)
+        if basic_cache is not None:
+            images_fallback, _ = basic_cache
+            context = {
+                'images': images_fallback,
+                'original_input_mask': get_original_input_cache(node_id),
+                'editor_target': 'combined',
+                'mask_output': 'combined',
+            }
+            logger.debug(f"[PreviewBridgeExtended] Reconstructed context from basic cache "
+                         f"(images shape={images_fallback.shape})")
+        else:
+            logger.warning(f"[PreviewBridgeExtended] No cached context or basic cache for node {node_id}")
+            return {
+                'success': False,
+                'error': f'No cached context for node {node_id}. Run workflow first.'
+            }
 
     images = context.get('images')
     original_input_mask = context.get('original_input_mask')

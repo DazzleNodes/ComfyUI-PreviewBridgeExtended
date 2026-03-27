@@ -27,6 +27,13 @@ logger = logging.getLogger("PreviewBridgeExtended")
 from .mask_ops import is_mask_empty, resize_mask, compute_tensor_fingerprint
 
 
+def _match_size(tensor: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    """Resize tensor to match target's spatial dimensions if they differ."""
+    if tensor.shape[-2:] != target.shape[-2:]:
+        return resize_mask(tensor, (target.shape[-2], target.shape[-1]))
+    return tensor
+
+
 @dataclass
 class LayerCache:
     """
@@ -72,15 +79,17 @@ class LayerCache:
             # No upstream - additions are the entire mask
             return self.additions
 
-        # Apply subtractions to upstream only
+        # Apply subtractions to upstream only (resize if dimensions differ after image change)
         if self.subtractions is not None and not is_mask_empty(self.subtractions):
-            base_with_subtractions = torch.clamp(self.upstream - self.subtractions, 0, 1)
+            subs = _match_size(self.subtractions, self.upstream)
+            base_with_subtractions = torch.clamp(self.upstream - subs, 0, 1)
         else:
             base_with_subtractions = self.upstream.clone()
 
         # Additions layer on top, guaranteed visible (never hidden by subtractions)
         if self.additions is not None and not is_mask_empty(self.additions):
-            return torch.max(base_with_subtractions, self.additions)
+            adds = _match_size(self.additions, base_with_subtractions)
+            return torch.max(base_with_subtractions, adds)
 
         return base_with_subtractions
 
@@ -100,7 +109,8 @@ class LayerCache:
         if self.subtractions is None or is_mask_empty(self.subtractions):
             return self.upstream.clone()
 
-        return torch.clamp(self.upstream - self.subtractions, 0, 1)
+        subs = _match_size(self.subtractions, self.upstream)
+        return torch.clamp(self.upstream - subs, 0, 1)
 
     def get_editor_mask(self) -> Optional[torch.Tensor]:
         """

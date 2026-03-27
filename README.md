@@ -45,7 +45,20 @@ Since Impact-Pack maintains a conservative approach to major changes, this repo 
 
 ## Installation
 
-### Git Clone (Recommended)
+### ComfyUI Registry (Recommended)
+
+Install directly from the [ComfyUI Registry](https://registry.comfy.org/publishers/djdarcy/nodes/comfyui-preview-bridge-extended):
+
+1. Open **ComfyUI Manager**
+2. Search for "Preview Bridge Extended"
+3. Click Install
+
+Or use the CLI:
+```bash
+comfy node registry-install comfyui-preview-bridge-extended
+```
+
+### Git Clone
 
 ```bash
 cd ComfyUI/custom_nodes

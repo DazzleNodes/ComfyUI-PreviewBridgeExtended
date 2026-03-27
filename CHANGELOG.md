@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.4-alpha] - 2026-03-26
+
+### Added
+- **Dual-Loading Detection Guard**: Detects when PBE is installed both as a standalone node and inside DazzleNodes
+  - Uses `sys`-level sentinel shared across all Python module namespaces
+  - Prints actionable WARNING at startup with both installation paths
+  - Disables duplicate instance's `WEB_DIRECTORY` (prevents double JS extension)
+  - Skips duplicate instance's API route registration (prevents cache mismatch)
+  - Root cause: Each `importlib` load creates separate module-level caches (`_layer_cache`, `_context_cache`); API routes from the first load target the wrong cache when node class comes from the second load
+- **Context Cache Fallback**: `prepare_for_editing` reconstructs context from basic caches when context cache is unavailable, preventing MaskEditor from opening with blank alpha
+- **ComfyUI Registry Install Instructions**: Added registry install method to README
+
+### Fixed
+- **`editor_target` Default Mismatch**: Function signature default was `"mask_editor"` but `INPUT_TYPES` default was `"combined"`
+  - Fixed in `node.py` process() signature
+  - Fixed in `api.py` fallback defaults for `generate_preview_for_api()` and `get_preview_for_api()`
+  - Prevents incorrect fallback behavior when widget value or context is missing
+- **Cross-Image Mask Resize Crash**: `get_combined()` and `get_input_mask()` now resize cached layers to match current image dimensions when `restore_mask=always` carries masks across image changes
+- **Stale Project Name**: Fixed CONTRIBUTING.md referencing "ImageMask-Fix" instead of "PreviewBridgeExtended"
+
+### Removed
+- `web/preview_bridge_extended.js.deprecated` (unused legacy file)
+
+### Technical Details
+- See `private/claude/2026-02-22__15-38-06__dual-loading-mask-output-bug-analysis.md` for dual-loading root cause analysis
+- See `private/claude/2026-02-22__16-08-09__full-postmortem_dual-loading-split-brain-cache-bug.md`
+- See `private/claude/2026-03-26__22-32-01__first-run-combined-excludes-upstream-bug.md` for context cache investigation
+
 ## [0.3.3-alpha] - 2026-01-12
 
 ### Changed

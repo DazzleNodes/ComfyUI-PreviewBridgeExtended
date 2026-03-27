@@ -1,6 +1,6 @@
-# Contributing to ComfyUI-ImageMask-Fix
+# Contributing to ComfyUI-PreviewBridgeExtended
 
-Thank you for considering contributing to ComfyUI-ImageMask-Fix!
+Thank you for considering contributing to Preview Bridge Extended!
 
 ## Code of Conduct
 
