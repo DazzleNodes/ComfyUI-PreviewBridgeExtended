@@ -97,6 +97,9 @@ def generate_preview_for_api(
             editor_target=editor_target,
             target_size=target_size
         )
+        # Mark clipspace as fresh (not yet consumed by process())
+        # This allows restore_mask=never to honor the current edit once
+        layer_cache.clipspace_consumed = False
         logger.debug(f"[PreviewBridgeExtended API] LayerCache updated: {layer_cache.debug_info()}")
 
         # Update context cache with LayerCache

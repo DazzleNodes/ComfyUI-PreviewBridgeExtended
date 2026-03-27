@@ -59,6 +59,7 @@ class LayerCache:
     image_fingerprint: Optional[str] = None  # Content-based fingerprint for image change detection
     last_editor_target: Optional[str] = None  # Mode when last saved
     upstream_hash: Optional[str] = None  # Content-based fingerprint for upstream change detection
+    clipspace_consumed: bool = False  # True after process() has decomposed the current clipspace
 
     def get_combined(self) -> Optional[torch.Tensor]:
         """
@@ -221,6 +222,7 @@ class LayerCache:
         self.image_fingerprint = None
         self.last_editor_target = None
         self.upstream_hash = None
+        self.clipspace_consumed = False
 
     def has_content(self) -> bool:
         """Check if any layer has content."""

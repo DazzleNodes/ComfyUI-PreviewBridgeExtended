@@ -241,13 +241,21 @@ class PreviewBridgeExtended:
         # This is the ONLY layer logic - LayerCache handles all cases
         # =====================================================
         if clipspace_mask_valid:
+            # Use the mode that created the clipspace (last_editor_target) for
+            # correct decomposition, falling back to current widget if unknown.
+            # The clipspace encodes one layer's state — decomposing it with the
+            # wrong mode assumption clobbers preserved layers.
+            decompose_mode = layer_cache.last_editor_target or editor_target
+            logger.debug(f"[PreviewBridgeExtended] Decomposing clipspace with mode='{decompose_mode}' "
+                          f"(last_editor_target='{layer_cache.last_editor_target}', widget='{editor_target}')")
             layer_cache = decompose_and_store(
                 node_id=unique_id,
                 clipspace=clipspace_mask,
                 upstream=upstream_input_mask,
-                editor_target=editor_target,
+                editor_target=decompose_mode,
                 target_size=target_size
             )
+            layer_cache.clipspace_consumed = True
             logger.debug(f"[PreviewBridgeExtended] LayerCache updated: {layer_cache.debug_info()}")
         else:
             layer_cache.last_editor_target = editor_target
@@ -414,7 +422,21 @@ class PreviewBridgeExtended:
         """
         target_height, target_width = target_size
 
-        # ALWAYS try clipspace FIRST - this is the CURRENT user edit
+        # If images haven't changed and the clipspace has already been consumed
+        # by a previous process() run, skip re-loading. This prevents:
+        # - Mode-switch clobbering: clipspace from one mode re-decomposed as another
+        # - restore_mask=never re-loading the same clipspace every run
+        #
+        # A fresh MaskEditor save resets clipspace_consumed=False, so the CURRENT
+        # edit always goes through — that's not "restoring", it's using what the
+        # user just created.
+        if not images_changed:
+            layer_cache = get_layer_cache(unique_id)
+            if layer_cache.clipspace_consumed:
+                logger.debug(f"[PreviewBridgeExtended] Clipspace already consumed, skipping re-decomposition")
+                return None
+
+        # Try clipspace file - this is the user's most recent MaskEditor edit
         if is_clipspace_path(clipspace_path):
             clipspace_mask = load_mask_from_clipspace(clipspace_path)
             if clipspace_mask is not None:

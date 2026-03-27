@@ -1,0 +1,321 @@
+{
+  "id": "7dde89a7-67bb-4fc1-8f7d-2a8b7eba84df",
+  "revision": 0,
+  "last_node_id": 18,
+  "last_link_id": 15,
+  "nodes": [
+    {
+      "id": 14,
+      "type": "PreviewImage",
+      "pos": [
+        712.4249844454495,
+        -67.96566999009491
+      ],
+      "size": [
+        369.3333740234374,
+        518.6666870117188
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 12
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.18.1",
+        "Node name for S&R": "PreviewImage"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 17,
+      "type": "PreviewImage",
+      "pos": [
+        1117.0917324923244,
+        -66.63232648423553
+      ],
+      "size": [
+        369.33349609375,
+        500.66668701171875
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 14
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.18.1",
+        "Node name for S&R": "PreviewImage"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 16,
+      "type": "MaskToImage",
+      "pos": [
+        924.4527676485744,
+        -192.6323264842356
+      ],
+      "size": [
+        193.2779296875,
+        26
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "mask",
+          "type": "MASK",
+          "link": 13
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            14
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.18.1",
+        "Node name for S&R": "MaskToImage"
+      }
+    },
+    {
+      "id": 18,
+      "type": "Display Any (rgthree)",
+      "pos": [
+        687.9382412813869,
+        524.7010170216238
+      ],
+      "size": [
+        264.3068603515625,
+        157.333251953125
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "dir": 3,
+          "name": "source",
+          "type": "*",
+          "link": 15
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "cnr_id": "rgthree-comfy",
+        "ver": "1.0.2509092031",
+        "Node name for S&R": "Display Any (rgthree)",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {}
+        }
+      },
+      "widgets_values": [
+        "== Preview Bridge Extended ==\nImage: 2688x4032\nOutput mode: combined\nRestore: always\nBlock: if_empty_mask\nImages changed: False\nInput mask (red): valid\nEditor mask (orange): valid\nPreview showing: input(red) + editor(orange)\nOutput mask: has content\nStatus: passing"
+      ]
+    },
+    {
+      "id": 11,
+      "type": "LoadImage",
+      "pos": [
+        -210.95659715782995,
+        -73.36425145724307
+      ],
+      "size": [
+        356.4474677124024,
+        480.8187208251952
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            10
+          ]
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": [
+            11
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfy-core",
+        "ver": "0.18.1",
+        "Node name for S&R": "LoadImage",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {}
+        },
+        "image": "clipspace/clipspace-painted-masked-1774577659610.png [input]"
+      },
+      "widgets_values": [
+        "clipspace/clipspace-painted-masked-1774577659610.png [input]",
+        "image"
+      ]
+    },
+    {
+      "id": 12,
+      "type": "PreviewBridgeExtended",
+      "pos": [
+        224.13057820773923,
+        -89.99878619958781
+      ],
+      "size": [
+        406.925146484375,
+        610
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 10
+        },
+        {
+          "name": "mask_opt",
+          "shape": 7,
+          "type": "MASK",
+          "link": 11
+        }
+      ],
+      "outputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "links": [
+            12
+          ]
+        },
+        {
+          "name": "mask",
+          "type": "MASK",
+          "links": [
+            13
+          ]
+        },
+        {
+          "name": "info",
+          "type": "STRING",
+          "links": [
+            15
+          ]
+        }
+      ],
+      "properties": {
+        "cnr_id": "comfyui-preview-bridge-extended",
+        "ver": "45723c37aeda3cafd703d739326a9d408b527167",
+        "Node name for S&R": "PreviewBridgeExtended",
+        "ue_properties": {
+          "widget_ue_connectable": {},
+          "input_ue_unconnectable": {}
+        },
+        "image": "clipspace/clipspace-painted-masked-1774577747353.png [input]"
+      },
+      "widgets_values": [
+        "PreviewBridgeExt/PBE-_temp_rahej_00001_.png [temp]",
+        "combined",
+        "combined",
+        "always",
+        "if_empty_mask"
+      ]
+    }
+  ],
+  "links": [
+    [
+      10,
+      11,
+      0,
+      12,
+      0,
+      "IMAGE"
+    ],
+    [
+      11,
+      11,
+      1,
+      12,
+      1,
+      "MASK"
+    ],
+    [
+      12,
+      12,
+      0,
+      14,
+      0,
+      "IMAGE"
+    ],
+    [
+      13,
+      12,
+      1,
+      16,
+      0,
+      "MASK"
+    ],
+    [
+      14,
+      16,
+      0,
+      17,
+      0,
+      "IMAGE"
+    ],
+    [
+      15,
+      12,
+      2,
+      18,
+      0,
+      "STRING"
+    ]
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 1.3310000000000008,
+      "offset": [
+        97.03869966576308,
+        339.02456586849513
+      ]
+    },
+    "ue_links": [],
+    "links_added_by_ue": [],
+    "frontendVersion": "1.42.8",
+    "VHS_latentpreview": false,
+    "VHS_latentpreviewrate": 0,
+    "VHS_MetadataImage": true,
+    "VHS_KeepIntermediate": true
+  },
+  "version": 0.4
+}

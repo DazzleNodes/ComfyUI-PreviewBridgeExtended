@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.5-alpha] - 2026-03-27
+
+### Added
+- **Example workflow**: `examples/PBE-test.json` with test image for reproducing 3-layer mask scenarios
+- **Manual test plan**: `tests/one-offs/manual_test_3layer_workflow.md` covering 4 test scenarios (basic combined, mode switch, restore_mask=never, full 3-layer round-trip)
+
+### Fixed
+- **Clipspace Mode Mismatch**: Switching `editor_target` modes (e.g., combined -> input_mask -> combined) no longer clobbers preserved layers. `process()` now uses `last_editor_target` to decompose the clipspace with the correct mode
+- **`restore_mask=never` Semantics**: Current MaskEditor edits now go through on the first run after editing, then are cleared on subsequent runs. Previously, edits were either lost immediately (too aggressive) or persisted indefinitely (too permissive). Uses `clipspace_consumed` flag to track whether the current clipspace has been processed
+
+### Technical Details
+- LayerCache gains `clipspace_consumed` field: reset by API on MaskEditor save, set by `process()` after decomposition
+- `_load_clipspace_mask` skips re-loading when clipspace already consumed (prevents mode-switch clobbering and restore_mask=never re-loading)
+- See `2026-03-26__23-22-36__clipspace-mode-mismatch-clobbers-layers.md`
+
 ## [0.3.4-alpha] - 2026-03-26
 
 ### Added
