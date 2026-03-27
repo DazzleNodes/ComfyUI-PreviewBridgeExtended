@@ -259,7 +259,8 @@ function setupPreviewBridgeExtendedNode(node, app) {
         name: "DazzleNodes.PreviewBridgeExtended",
 
         nodeCreated(node, app) {
-            if (node.comfyClass !== "PreviewBridgeExtended") {
+            if (node.comfyClass !== "PreviewBridgeExtended" &&
+                node.comfyClass !== "PreviewBridgeExtendedLatent") {
                 return;
             }
 

@@ -25,6 +25,9 @@ _preview_bridge_original_input_cache: Dict[str, torch.Tensor] = {}  # unique_id 
 _preview_bridge_additions_cache: Dict[str, torch.Tensor] = {}  # unique_id -> user additions (areas user drew that weren't in original)
 _preview_bridge_subtractions_cache: Dict[str, torch.Tensor] = {}  # unique_id -> user subtractions (areas erased from original)
 
+# Latent decode cache — stores decoded IMAGE + latent fingerprint to avoid re-decoding
+_latent_decode_cache: Dict[str, Dict[str, Any]] = {}  # unique_id -> {fingerprint, decoded_images}
+
 # Preview bridge registration system for clipspace integration
 _pb_id_cnt = time.time()  # Counter for generating unique preview bridge IDs
 _preview_bridge_image_id_map: Dict[str, tuple] = {}  # pb_id/path -> (file_path, ui_item)
@@ -182,3 +185,16 @@ def clear_all_caches(unique_id: str):
     delete_editor_mask_cache(unique_id)
     delete_input_override_cache(unique_id)
     clear_delta_caches(unique_id)
+
+
+def get_latent_decode_cache(unique_id: str) -> Dict[str, Any]:
+    """Get cached decoded image for a latent node."""
+    return _latent_decode_cache.get(unique_id)
+
+
+def set_latent_decode_cache(unique_id: str, fingerprint: str, decoded_images: torch.Tensor):
+    """Set cached decoded image for a latent node."""
+    _latent_decode_cache[unique_id] = {
+        'fingerprint': fingerprint,
+        'decoded_images': decoded_images,
+    }

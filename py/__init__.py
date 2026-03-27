@@ -11,12 +11,21 @@
 #   - caches.py: Legacy module-level caches (being replaced by layer_cache)
 #   - utils.py: Utility functions
 
-# Re-export node class and registration mappings
+# Re-export node classes and registration mappings
 from .node import (
     PreviewBridgeExtended,
-    NODE_CLASS_MAPPINGS,
-    NODE_DISPLAY_NAME_MAPPINGS,
+    NODE_CLASS_MAPPINGS as _IMAGE_NODE_MAPPINGS,
+    NODE_DISPLAY_NAME_MAPPINGS as _IMAGE_DISPLAY_MAPPINGS,
 )
+from .node_latent import (
+    PreviewBridgeExtendedLatent,
+    NODE_CLASS_MAPPINGS as _LATENT_NODE_MAPPINGS,
+    NODE_DISPLAY_NAME_MAPPINGS as _LATENT_DISPLAY_MAPPINGS,
+)
+
+# Merge node registrations from both variants
+NODE_CLASS_MAPPINGS = {**_IMAGE_NODE_MAPPINGS, **_LATENT_NODE_MAPPINGS}
+NODE_DISPLAY_NAME_MAPPINGS = {**_IMAGE_DISPLAY_MAPPINGS, **_LATENT_DISPLAY_MAPPINGS}
 
 # Re-export API functions for route handlers
 from .api import (
@@ -53,8 +62,9 @@ from .layer_cache import (
 )
 
 __all__ = [
-    # Node
+    # Nodes
     'PreviewBridgeExtended',
+    'PreviewBridgeExtendedLatent',
     'NODE_CLASS_MAPPINGS',
     'NODE_DISPLAY_NAME_MAPPINGS',
     # API

@@ -1,28 +1,31 @@
 """
-Preview Bridge Extended - Main Node Class
+Preview Bridge Extended - IMAGE Node Class
 
-This is the main ComfyUI node class that implements the Preview Bridge Extended functionality.
+ComfyUI node that accepts IMAGE input with optional MASK, providing
+MaskEditor integration and 3-layer mask editing (upstream/additions/subtractions).
 """
 
 import os
 import logging
 import torch
-from typing import Tuple, Optional, Dict, Any
+from typing import Optional, Dict, Any
 import folder_paths
 
 # Use named logger so PBE_DEBUG environment variable works
 logger = logging.getLogger("PreviewBridgeExtended")
 
-from .utils import is_clipspace_path, load_mask_from_clipspace, register_clipspace_image
-from .mask_ops import is_mask_empty, resize_mask, process_input_mask, compute_tensor_fingerprint
 from .caches import (
-    get_cache, set_cache,
-    get_original_input_cache, set_original_input_cache, delete_original_input_cache,
-    get_context_cache, set_context_cache,
+    set_cache,
+    get_original_input_cache,
+    set_context_cache,
     set_previewbridge_image, _preview_bridge_image_id_map, _preview_bridge_image_name_map
 )
-from .layer_cache import get_layer_cache, decompose_and_store, get_output_mask, get_preview_masks
-from .preview import save_preview_images, generate_info
+from .preview import save_preview_images
+from .node_base import (
+    process_masks, apply_dazzle_signal, should_block,
+    MASK_OUTPUT_WIDGET, EDITOR_TARGET_WIDGET, RESTORE_MASK_WIDGET,
+    BLOCK_WIDGET, DAZZLE_SIGNAL_WIDGET,
+)
 
 
 class PreviewBridgeExtended:
@@ -40,61 +43,16 @@ class PreviewBridgeExtended:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "images": ("IMAGE",),  # Input image(s)
-                "image": ("STRING", {"default": ""}),  # Clipspace path from widget
+                "images": ("IMAGE",),
+                "image": ("STRING", {"default": ""}),
             },
             "optional": {
-                "mask_opt": ("MASK",),  # Optional mask from upstream
-                "mask_output": (
-                    ["combined", "mask_editor", "input_mask"],
-                    {
-                        "default": "combined",
-                        "tooltip": (
-                            "Controls what goes to the OUTPUT mask slot.\n"
-                            "combined: OR combine input_mask + mask_editor drawings\n"
-                            "mask_editor: Only output the editor mask layer\n"
-                            "input_mask: Only output the input mask layer\n\n"
-                            "Preview displays the selected output mode (WYSIWYG)."
-                        )
-                    }
-                ),
-                "editor_target": (
-                    ["combined", "mask_editor", "input_mask"],
-                    {
-                        "default": "combined",
-                        "tooltip": (
-                            "Controls WHAT is editable in MaskEditor.\n"
-                            "Display always shows: red=input mask, orange=editor mask.\n\n"
-                            "combined: Edit both input + editor masks together (default)\n"
-                            "mask_editor: Only edit editor mask (input mask shown as red, locked)\n"
-                            "input_mask: Only edit input mask (editor mask shown as orange, locked)"
-                        )
-                    }
-                ),
-                "restore_mask": (
-                    ["never", "always", "if_same_size"],
-                    {
-                        "default": "never",
-                        "tooltip": (
-                            "if_same_size: Restore cached mask if new image has same dimensions\n"
-                            "always: Always restore cached mask (resized if needed)\n"
-                            "never: Do not restore cached masks\n"
-                            "Note: restore_mask has higher priority than block"
-                        )
-                    }
-                ),
-                "block": (
-                    ["never", "if_empty_mask", "if_empty_editor", "always"],
-                    {
-                        "default": "never",
-                        "tooltip": (
-                            "never: Never block execution\n"
-                            "if_empty_mask: Block if the OUTPUT mask is empty\n"
-                            "if_empty_editor: Block if user hasn't drawn in MaskEditor\n"
-                            "always: Always block execution (debugging backstop)"
-                        )
-                    }
-                ),
+                "mask_opt": ("MASK",),
+                "mask_output": MASK_OUTPUT_WIDGET,
+                "editor_target": EDITOR_TARGET_WIDGET,
+                "restore_mask": RESTORE_MASK_WIDGET,
+                "block": BLOCK_WIDGET,
+                "dazzle_signal": DAZZLE_SIGNAL_WIDGET,
             },
             "hidden": {
                 "unique_id": "UNIQUE_ID",
@@ -114,6 +72,18 @@ class PreviewBridgeExtended:
         "Supports restore_mask functionality for mask persistence."
     )
 
+    @classmethod
+    def IS_CHANGED(cls, **kwargs):
+        import sys
+        # Re-execute when Dazzle Command state changes (play/pause toggle).
+        # The signal dict is cache-stable, but PBE needs to re-evaluate
+        # blocking based on the active state from sys side-channel.
+        cmd_state = getattr(sys, '_dazzle_command_state', None)
+        if cmd_state:
+            state = cmd_state.get('state', '')
+            return f"dazzle:{state}"
+        return ""
+
     def __init__(self):
         self.output_dir = folder_paths.get_temp_directory()
         self.type = "temp"
@@ -127,38 +97,14 @@ class PreviewBridgeExtended:
         editor_target: str = "combined",
         restore_mask: str = "never",
         block: str = "never",
+        dazzle_signal=None,
         unique_id: str = "",
         prompt=None,
         extra_pnginfo=None
     ) -> Dict[str, Any]:
-        """
-        Process images with optional mask input and restore_mask functionality.
-
-        Uses LayerCache for unified layer storage:
-        - upstream: Immutable mask from mask_opt input
-        - additions: User-drawn areas (orange layer)
-        - subtractions: User-erased areas from upstream (removed from red layer)
-
-        Args:
-            images: Input image tensor [B, H, W, C]
-            image: Clipspace path from widget (populated by MaskEditor)
-            mask_opt: Optional mask from upstream [B, H, W] or [H, W]
-            mask_output: What goes to OUTPUT mask ("combined", "input_mask", "mask_editor")
-            editor_target: Which layer MaskEditor affects ("mask_editor", "input_mask", "combined")
-            restore_mask: Mask restoration mode ("never", "always", "if_same_size")
-            block: Block mode ("never", "if_empty_mask", "always")
-            unique_id: Node unique ID for caching
-            prompt: ComfyUI prompt data
-            extra_pnginfo: Extra PNG info for saving
-
-        Returns:
-            Dict with "ui" and "result" keys
-        """
-        # Get image dimensions
+        """Process images with optional mask input and MaskEditor integration."""
+        # Log inputs
         batch, height, width, channels = images.shape
-        target_size = (height, width)
-
-        # DIAGNOSTIC: Log all inputs received by process()
         logger.debug(f"[PreviewBridgeExtended] process() called: unique_id={unique_id}")
         logger.debug(f"[PreviewBridgeExtended] process() IMAGE: {width}x{height} (shape={images.shape})")
         logger.debug(f"[PreviewBridgeExtended] process() WIDGETS: mask_output='{mask_output}', "
@@ -167,160 +113,34 @@ class PreviewBridgeExtended:
                       f"{'None' if mask_opt is None else f'shape={mask_opt.shape}, sum={mask_opt.sum().item():.2f}'}")
         logger.debug(f"[PreviewBridgeExtended] process() image widget: '{image}'")
 
-        # Detect if images have changed
-        images_changed = self._detect_images_changed(images, unique_id)
-
-        # Get LayerCache for this node
-        layer_cache = get_layer_cache(unique_id)
-
-        # Handle image change - validate LayerCache
-        if images_changed:
-            if restore_mask == "always":
-                # Always preserve for cross-image restoration (will resize)
-                layer_cache.validate_image(images, preserve_layers=True)
-            elif restore_mask == "if_same_size":
-                # Only preserve if current mask size matches new image size
-                current_mask = layer_cache.get_combined()
-                if current_mask is not None:
-                    mask_h, mask_w = current_mask.shape[-2], current_mask.shape[-1]
-                    sizes_match = (mask_h == height and mask_w == width)
-                    if sizes_match:
-                        logger.debug(f"[PreviewBridgeExtended] restore_mask=if_same_size: sizes match "
-                                     f"({mask_w}x{mask_h} == {width}x{height}), preserving layers")
-                    else:
-                        logger.debug(f"[PreviewBridgeExtended] restore_mask=if_same_size: sizes differ "
-                                     f"({mask_w}x{mask_h} != {width}x{height}), clearing layers")
-                else:
-                    sizes_match = False
-                layer_cache.validate_image(images, preserve_layers=sizes_match)
-            else:  # never
-                layer_cache.validate_image(images, preserve_layers=False)
-                layer_cache.clear()
-                logger.debug(f"[PreviewBridgeExtended] Image changed, LayerCache cleared (restore_mask=never)")
-        elif restore_mask == "never":
-            # Even when images don't change, restore_mask=never means don't persist user edits
-            # Clear additions/subtractions but keep upstream (that's from mask_opt, not user edits)
-            if layer_cache.additions is not None or layer_cache.subtractions is not None:
-                layer_cache.additions = None
-                layer_cache.subtractions = None
-                logger.debug(f"[PreviewBridgeExtended] restore_mask=never, cleared user edits (additions/subtractions)")
-
-        # Handle clipspace registration when images haven't changed
-        if not images_changed and image and image not in _preview_bridge_image_id_map:
-            if is_clipspace_path(image):
-                register_clipspace_image(image, unique_id)
-
-        # Process input mask from upstream (mask_opt)
-        upstream_input_mask = process_input_mask(mask_opt, target_size)
-        upstream_input_valid = not is_mask_empty(upstream_input_mask)
-
-        # Update LayerCache with upstream (handles change detection internally)
-        layer_cache.on_upstream_change(upstream_input_mask)
-        logger.debug(f"[PreviewBridgeExtended] After on_upstream_change: {layer_cache.debug_info()}")
-
-        # Store original input mask for preview coloring
-        if upstream_input_valid:
-            set_original_input_cache(unique_id, upstream_input_mask.clone())
-        else:
-            delete_original_input_cache(unique_id)
-
-        # Load clipspace mask (raw user edits from MaskEditor)
-        clipspace_mask = self._load_clipspace_mask(
+        # Run shared mask orchestration pipeline
+        result = process_masks(
             unique_id=unique_id,
-            images_changed=images_changed,
-            restore_mask=restore_mask,
-            target_size=target_size,
-            clipspace_path=image
-        )
-        clipspace_mask_valid = not is_mask_empty(clipspace_mask)
-        logger.debug(f"[PreviewBridgeExtended] clipspace_mask: "
-                      f"{'None/empty' if not clipspace_mask_valid else f'shape={clipspace_mask.shape}, sum={clipspace_mask.sum().item():.2f}'}")
-
-        # =====================================================
-        # LAYERCACHE: Decompose clipspace into canonical layers
-        # This is the ONLY layer logic - LayerCache handles all cases
-        # =====================================================
-        if clipspace_mask_valid:
-            # Use the mode that created the clipspace (last_editor_target) for
-            # correct decomposition, falling back to current widget if unknown.
-            # The clipspace encodes one layer's state — decomposing it with the
-            # wrong mode assumption clobbers preserved layers.
-            decompose_mode = layer_cache.last_editor_target or editor_target
-            logger.debug(f"[PreviewBridgeExtended] Decomposing clipspace with mode='{decompose_mode}' "
-                          f"(last_editor_target='{layer_cache.last_editor_target}', widget='{editor_target}')")
-            layer_cache = decompose_and_store(
-                node_id=unique_id,
-                clipspace=clipspace_mask,
-                upstream=upstream_input_mask,
-                editor_target=decompose_mode,
-                target_size=target_size
-            )
-            layer_cache.clipspace_consumed = True
-            logger.debug(f"[PreviewBridgeExtended] LayerCache updated: {layer_cache.debug_info()}")
-        else:
-            layer_cache.last_editor_target = editor_target
-
-        # =====================================================
-        # GET OUTPUT MASK FROM LAYERCACHE
-        # Simple, unified output - no 9-combination matrix needed
-        # =====================================================
-        final_mask = get_output_mask(unique_id, mask_output)
-
-        # Log final mask
-        if final_mask is not None:
-            logger.debug(f"[PreviewBridgeExtended] FINAL MASK (LayerCache): shape={final_mask.shape}, "
-                          f"sum={final_mask.sum().item():.2f}")
-        else:
-            logger.debug(f"[PreviewBridgeExtended] FINAL MASK (LayerCache): None")
-
-        # Create empty mask if none available
-        if final_mask is None:
-            final_mask = torch.zeros((1, height, width), dtype=torch.float32)
-
-        # Ensure mask has batch dimension
-        if len(final_mask.shape) == 2:
-            final_mask = final_mask.unsqueeze(0)
-
-        # Check if mask is empty for blocking decision
-        is_empty = is_mask_empty(final_mask)
-
-        # Check if editor has content (for if_empty_editor blocking)
-        editor_has_content = layer_cache.additions is not None and not is_mask_empty(layer_cache.additions)
-
-        # Generate info string
-        info = generate_info(
-            input_mask_valid=upstream_input_valid,
-            restored_mask_valid=editor_has_content,
+            images=images,
+            image=image,
+            mask_opt=mask_opt,
             mask_output=mask_output,
+            editor_target=editor_target,
             restore_mask=restore_mask,
             block=block,
-            images_changed=images_changed,
-            final_empty=is_empty,
-            image_size=(width, height)
         )
 
         # Cache context for API preview refresh (JS-Python communication)
         logger.debug(f"[PreviewBridgeExtended] Setting context cache for key='{unique_id}' (type={type(unique_id).__name__})")
         set_context_cache(unique_id, {
             'images': images,
-            'upstream_input_mask': upstream_input_mask,
+            'upstream_input_mask': result.upstream_input_mask,
             'original_input_mask': get_original_input_cache(unique_id),
             'mask_output': mask_output,
             'editor_target': editor_target,
-            'layer_cache': layer_cache,
+            'layer_cache': result.layer_cache,
         })
 
-        # =====================================================
-        # GET PREVIEW MASKS FROM LAYERCACHE
-        # Simple, unified preview selection
-        # =====================================================
-        preview_input_mask, preview_editor_mask = get_preview_masks(unique_id, mask_output)
-
-        # Save preview images with separate mask overlays
+        # Save preview images with mask overlays
         preview_result = save_preview_images(
             images=images,
-            input_mask=preview_input_mask,
-            editor_mask=preview_editor_mask,
+            input_mask=result.preview_input_mask,
+            editor_mask=result.preview_editor_mask,
             editor_target=editor_target,
             unique_id=unique_id,
             original_mask=get_original_input_cache(unique_id),
@@ -346,161 +166,23 @@ class PreviewBridgeExtended:
         # Update basic caches for ComfyUI integration
         set_cache(unique_id, images, preview_result)
 
-        # Handle blocking
-        should_block = (
-            block == "always" or
-            (block == "if_empty_mask" and is_empty) or
-            (block == "if_empty_editor" and not editor_has_content)
-        )
+        # Apply DAZZLE_SIGNAL override
+        block = apply_dazzle_signal(dazzle_signal, block, result.editor_has_content, result.is_empty)
 
-        if should_block:
+        # Handle blocking
+        if should_block(block, result.is_empty, result.editor_has_content):
             try:
                 from comfy_execution.graph import ExecutionBlocker
-                result = (ExecutionBlocker(None), ExecutionBlocker(None), info)
+                output = (ExecutionBlocker(None), ExecutionBlocker(None), result.info)
             except ImportError:
-                result = (images, final_mask, info)
+                output = (images, result.final_mask, result.info)
         else:
-            result = (images, final_mask, info)
+            output = (images, result.final_mask, result.info)
 
         return {
             "ui": {"images": preview_result},
-            "result": result,
+            "result": output,
         }
-
-    def _detect_images_changed(self, images: torch.Tensor, unique_id: str) -> bool:
-        """
-        Detect if input images have changed from cached version.
-
-        Uses content-based fingerprinting instead of object identity to handle
-        dynamically generated images (e.g., outputs from upstream nodes) that
-        have new tensor objects each execution but same content.
-        """
-        cached = get_cache(unique_id)
-        if cached is None:
-            return True
-
-        cached_images, _ = cached
-        # Use content fingerprinting instead of object identity
-        cached_fp = compute_tensor_fingerprint(cached_images)
-        current_fp = compute_tensor_fingerprint(images)
-
-        changed = cached_fp != current_fp
-        if changed:
-            logger.debug(f"[PreviewBridgeExtended] Images content changed: "
-                         f"old={cached_fp[:8] if cached_fp else 'None'}... "
-                         f"new={current_fp[:8] if current_fp else 'None'}...")
-        return changed
-
-    def _load_clipspace_mask(
-        self,
-        unique_id: str,
-        images_changed: bool,
-        restore_mask: str,
-        target_size: Tuple[int, int],
-        clipspace_path: str = ""
-    ) -> Optional[torch.Tensor]:
-        """
-        Load mask from clipspace file or cache.
-
-        This loads the raw user edits from MaskEditor. The routing to
-        appropriate caches (editor vs input_override) is handled by the
-        caller based on editor_target setting.
-
-        Priority order:
-        1. Clipspace file (user's most recent MaskEditor edit) - ALWAYS checked
-        2. Combined cache fallback (editor + input_override) - controlled by restore_mask
-
-        Args:
-            unique_id: Node unique ID
-            images_changed: Whether images have changed
-            restore_mask: Restoration mode (controls cache fallback only)
-            target_size: (height, width) for size comparison
-            clipspace_path: Path to clipspace file from widget
-
-        Returns:
-            Mask tensor or None
-        """
-        target_height, target_width = target_size
-
-        # If images haven't changed and the clipspace has already been consumed
-        # by a previous process() run, skip re-loading. This prevents:
-        # - Mode-switch clobbering: clipspace from one mode re-decomposed as another
-        # - restore_mask=never re-loading the same clipspace every run
-        #
-        # A fresh MaskEditor save resets clipspace_consumed=False, so the CURRENT
-        # edit always goes through — that's not "restoring", it's using what the
-        # user just created.
-        if not images_changed:
-            layer_cache = get_layer_cache(unique_id)
-            if layer_cache.clipspace_consumed:
-                logger.debug(f"[PreviewBridgeExtended] Clipspace already consumed, skipping re-decomposition")
-                return None
-
-        # Try clipspace file - this is the user's most recent MaskEditor edit
-        if is_clipspace_path(clipspace_path):
-            clipspace_mask = load_mask_from_clipspace(clipspace_path)
-            if clipspace_mask is not None:
-                # File loaded successfully - use it even if empty (user may have erased)
-                if is_mask_empty(clipspace_mask):
-                    # User erased the mask - return None, don't fall back to cache
-                    return None
-
-                # Get clipspace dimensions
-                mask_height = clipspace_mask.shape[1] if len(clipspace_mask.shape) == 3 else clipspace_mask.shape[0]
-                mask_width = clipspace_mask.shape[2] if len(clipspace_mask.shape) == 3 else clipspace_mask.shape[1]
-                sizes_match = (mask_height == target_height and mask_width == target_width)
-
-                if sizes_match:
-                    # Same size - return clipspace directly
-                    return clipspace_mask
-                else:
-                    # Different size - respect restore_mask setting
-                    if restore_mask == "never":
-                        logger.debug(f"[PreviewBridgeExtended] Clipspace size {mask_width}x{mask_height} differs from "
-                                     f"image {target_width}x{target_height}, restore_mask=never - clearing")
-                        return None
-                    elif restore_mask == "if_same_size":
-                        logger.debug(f"[PreviewBridgeExtended] Clipspace size {mask_width}x{mask_height} differs from "
-                                     f"image {target_width}x{target_height}, restore_mask=if_same_size - clearing")
-                        return None
-                    elif restore_mask == "always":
-                        logger.debug(f"[PreviewBridgeExtended] Clipspace size {mask_width}x{mask_height} differs from "
-                                     f"image {target_width}x{target_height}, restore_mask=always - resizing")
-                        return resize_mask(clipspace_mask, target_size)
-
-        # No clipspace available - check if we should restore from LayerCache
-        if restore_mask == "never":
-            return None
-
-        # CRITICAL: If images haven't changed, DON'T restore from LayerCache!
-        # The existing LayerCache state is already correct for the current mode.
-        # Restoring would cause re-decomposition with wrong semantics when
-        # editor_target changes (e.g., get_combined() treated as "only additions").
-        if not images_changed:
-            return None
-
-        # Images changed - check if restore_mask allows restoration
-        if restore_mask not in ["always", "if_same_size"]:
-            return None
-
-        # Try LayerCache fallback - use get_combined() to restore full state
-        # This is ONLY for cross-image restoration when images actually changed
-        layer_cache = get_layer_cache(unique_id)
-        mask = layer_cache.get_combined()
-
-        if mask is not None and not is_mask_empty(mask):
-            mask_height = mask.shape[-2]
-            mask_width = mask.shape[-1]
-
-            if restore_mask == "if_same_size":
-                if mask_height == target_height and mask_width == target_width:
-                    return mask
-            elif restore_mask == "always":
-                if mask_height != target_height or mask_width != target_width:
-                    return resize_mask(mask, target_size)
-                return mask
-
-        return None
 
 
 # Node registration

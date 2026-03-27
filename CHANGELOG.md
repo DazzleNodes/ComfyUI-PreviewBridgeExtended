@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.6-alpha] - 2026-03-27
+
+### Added
+- **DAZZLE_SIGNAL input** -- optional input for Dazzle Command orchestration. Controls block
+  mode based on play/pause state. Signal dict contains both configurations; active state read
+  from `sys._dazzle_command_state` side-channel.
+- **IS_CHANGED for Dazzle state** -- returns `"dazzle:STATE"` to force re-execution when
+  play/pause toggles (PBE needs to re-evaluate blocking decision).
+
+### Changed
+- **Refactored into node_base.py** -- shared mask orchestration logic extracted to `node_base.py`
+  with `apply_dazzle_signal()` and `should_block()` helpers. Prepares for future LATENT variant.
+
 ## [0.3.5-alpha] - 2026-03-27
 
 ### Added
