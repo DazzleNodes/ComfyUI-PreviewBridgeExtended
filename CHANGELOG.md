@@ -7,9 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.3.6-alpha] - 2026-03-27
+## [0.4.0-alpha] - 2026-03-28
 
 ### Added
+- **Preview Bridge Ext. Latent node** (#19) -- new companion node that accepts LATENT+VAE instead of IMAGE
+  - VAE decodes latent for preview display; original latent passes through unmodified
+  - Extracts `noise_mask` from LATENT dict as upstream mask, composites with external `mask_opt` (OR union)
+  - `inject_noise_mask` widget: optionally writes edited mask back into LATENT output as `noise_mask`
+  - Cached VAE decode via latent content fingerprinting (skips re-decode when latent unchanged)
+  - Supports all latent types transparently (SD1.5, SDXL, Flux, WAN, Qwen, etc.)
+  - Full 3-layer mask editing, same MaskEditor integration as IMAGE variant
 - **DAZZLE_SIGNAL input** -- optional input for Dazzle Command orchestration. Controls block
   mode based on play/pause state. Signal dict contains both configurations; active state read
   from `sys._dazzle_command_state` side-channel.
@@ -18,7 +25,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Refactored into node_base.py** -- shared mask orchestration logic extracted to `node_base.py`
-  with `apply_dazzle_signal()` and `should_block()` helpers. Prepares for future LATENT variant.
+  with `apply_dazzle_signal()` and `should_block()` helpers. Both IMAGE and LATENT variants
+  share the same mask pipeline (~70% code reuse).
+
+### Companion versions
+- Requires [DazzleCommand v0.2.0-alpha](https://github.com/DazzleNodes/ComfyUI-DazzleCommand)
+  for play/pause orchestration and DAZZLE_SIGNAL output
+- Requires [SmartResCalc v0.11.0](https://github.com/djdarcy/ComfyUI-Smart-Resolution-Calc)
+  for seed control integration
 
 ## [0.3.5-alpha] - 2026-03-27
 
