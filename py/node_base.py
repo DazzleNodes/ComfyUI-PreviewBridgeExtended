@@ -406,16 +406,19 @@ def apply_dazzle_signal(
 ) -> str:
     """Apply DAZZLE_SIGNAL override to block mode. Returns updated block value.
 
-    The signal dict contains BOTH play and pause configs (cache-stable).
-    The active state is read from sys._dazzle_command_state side-channel.
+    Reads active_state from the signal dict (per-node, via noodle).
+    Falls back to sys._dazzle_command_state global for backward compat
+    with older DazzleCommand versions (schema_version < 2).
     """
     import sys
     if not dazzle_signal or not isinstance(dazzle_signal, dict):
         return block
 
-    # Read active state from side-channel (written by DazzleCommand IS_CHANGED)
-    cmd_state = getattr(sys, '_dazzle_command_state', None)
-    state = cmd_state.get('state', 'paused') if cmd_state else 'paused'
+    # Prefer per-node state from signal (schema v2+), fall back to global (#5)
+    state = dazzle_signal.get('active_state')
+    if state is None:
+        cmd_state = getattr(sys, '_dazzle_command_state', None)
+        state = cmd_state.get('state', 'paused') if cmd_state else 'paused'
 
     # Pick the right config from the signal based on active state
     if state == 'playing':

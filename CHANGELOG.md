@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1-alpha] - 2026-03-30
+
+### Fixed
+- **Standalone PBE not affected by unconnected DazzleCommand** (#56) -- IS_CHANGED only
+  checks DazzleCommand state when `dazzle_signal` noodle is connected. Standalone PBE nodes
+  in multi-node workflows are no longer influenced by unconnected DazzleCommand nodes.
+- **Per-node active state from signal** (DazzleCommand#5) -- `apply_dazzle_signal` and
+  `IS_CHANGED` now read `active_state` from the signal dict (per-noodle) instead of
+  `sys._dazzle_command_state` (global). Each PBE reads its own connected DazzleCommand's
+  state, fixing multi-DazzleCommand workflows where DC-1=Play and DC-2=Pause.
+  Falls back to global for backward compat with DazzleCommand schema v1.
+
+### Companion versions
+- Requires [DazzleCommand v0.2.2-alpha](https://github.com/DazzleNodes/ComfyUI-DazzleCommand)
+  for signal `active_state` field (schema v2)
+
 ## [0.4.0-alpha] - 2026-03-28
 
 ### Added

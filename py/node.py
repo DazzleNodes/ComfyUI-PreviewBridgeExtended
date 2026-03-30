@@ -75,13 +75,18 @@ class PreviewBridgeExtended:
     @classmethod
     def IS_CHANGED(cls, **kwargs):
         import sys
-        # Re-execute when Dazzle Command state changes (play/pause toggle).
-        # The signal dict is cache-stable, but PBE needs to re-evaluate
-        # blocking based on the active state from sys side-channel.
-        cmd_state = getattr(sys, '_dazzle_command_state', None)
-        if cmd_state:
-            state = cmd_state.get('state', '')
-            return f"dazzle:{state}"
+        # Only check DazzleCommand state if dazzle_signal noodle is connected.
+        # Standalone PBE nodes (without noodle) should not be affected by
+        # DazzleCommand nodes elsewhere in the workflow (#56).
+        dazzle_signal = kwargs.get('dazzle_signal')
+        if dazzle_signal is not None:
+            # Prefer per-node state from signal (schema v2+), fall back to global (#5)
+            if isinstance(dazzle_signal, dict) and 'active_state' in dazzle_signal:
+                return f"dazzle:{dazzle_signal['active_state']}"
+            cmd_state = getattr(sys, '_dazzle_command_state', None)
+            if cmd_state:
+                state = cmd_state.get('state', '')
+                return f"dazzle:{state}"
         return ""
 
     def __init__(self):
