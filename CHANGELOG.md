@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2-alpha] - 2026-03-30
+
+### Fixed
+- **Deterministic preview filenames** -- preview images now use a stable filename based on
+  node ID (e.g., `PBE-node1_00001_.png`) instead of ComfyUI's random temp suffix. Eliminates
+  cache invalidation caused by changing `image` widget values between runs. Downstream nodes
+  (VAEEncode, KSampler, etc.) now correctly cache when PBE's input hasn't changed.
+- **Per-node DazzleCommand state** (DazzleCommand#5) -- IS_CHANGED and apply_dazzle_signal
+  read `active_state` from signal dict (per-noodle). Each PBE reads its own connected
+  DazzleCommand's state. Removed legacy global fallback.
+
+### Changed
+- Preview save bypasses `nodes.PreviewImage()` entirely — uses direct PIL save with
+  deterministic path. Eliminates temp file spam in `PreviewBridgeExt/` folder.
+
+### Companion versions
+- Requires [DazzleCommand v0.2.3-alpha](https://github.com/DazzleNodes/ComfyUI-DazzleCommand)
+  for signal `active_state` field and per-node state registry
+
 ## [0.4.1-alpha] - 2026-03-30
 
 ### Fixed

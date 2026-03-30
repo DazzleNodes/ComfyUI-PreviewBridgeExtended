@@ -5,14 +5,52 @@ Provides functions for generating preview images with mask overlays.
 """
 
 import logging
+import os
+import numpy as np
+from PIL import Image
 import torch
 from typing import Tuple, Optional
-import nodes
+try:
+    import folder_paths
+except ImportError:
+    folder_paths = None  # For unit testing outside ComfyUI
 
 # Use named logger so PBE_DEBUG environment variable works
 logger = logging.getLogger("PreviewBridgeExtended")
 
 from .mask_ops import is_mask_empty, resize_mask
+
+
+def _save_preview_direct(images: torch.Tensor, unique_id: str,
+                         prompt=None, extra_pnginfo=None) -> list:
+    """Save preview images with a deterministic filename based on node ID.
+
+    Bypasses ComfyUI's PreviewImage which generates random temp suffixes
+    on every instantiation, causing cache invalidation (#cache-fix).
+
+    Returns list of image info dicts compatible with ComfyUI's UI format.
+    """
+    subfolder = "PreviewBridgeExt"
+    filename = f"PBE-node{unique_id}_00001_.png"
+    full_dir = os.path.join(folder_paths.get_temp_directory(), subfolder)
+    os.makedirs(full_dir, exist_ok=True)
+    full_path = os.path.join(full_dir, filename)
+
+    # Convert tensor to PIL and save (first image in batch)
+    img_np = (images[0].cpu().numpy() * 255).clip(0, 255).astype(np.uint8)
+    if img_np.shape[-1] == 4:
+        pil_img = Image.fromarray(img_np, mode='RGBA')
+    else:
+        pil_img = Image.fromarray(img_np, mode='RGB')
+    pil_img.save(full_path, compress_level=1)
+
+    logger.debug(f"[Preview] Saved {full_path} ({pil_img.size[0]}x{pil_img.size[1]})")
+
+    return [{
+        "filename": filename,
+        "subfolder": subfolder,
+        "type": "temp",
+    }]
 
 
 def save_preview_images(
@@ -49,14 +87,8 @@ def save_preview_images(
     editor_empty = is_mask_empty(editor_mask)
 
     if input_empty and editor_empty:
-        # No masks - save plain images
-        res = nodes.PreviewImage().save_images(
-            images,
-            filename_prefix="PreviewBridgeExt/PBE-",
-            prompt=prompt,
-            extra_pnginfo=extra_pnginfo
-        )
-        return res['ui']['images']
+        # No masks - save plain images with deterministic filename
+        return _save_preview_direct(images, unique_id, prompt, extra_pnginfo)
 
     # Has mask(s) - create images with colored overlays
     masked_images = apply_mask_overlays(
@@ -64,13 +96,7 @@ def save_preview_images(
         original_mask=original_mask
     )
 
-    res = nodes.PreviewImage().save_images(
-        masked_images,
-        filename_prefix="PreviewBridgeExt/PBE-",
-        prompt=prompt,
-        extra_pnginfo=extra_pnginfo
-    )
-    return res['ui']['images']
+    return _save_preview_direct(masked_images, unique_id, prompt, extra_pnginfo)
 
 
 def apply_mask_overlays(

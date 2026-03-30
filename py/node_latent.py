@@ -98,18 +98,13 @@ class PreviewBridgeExtendedLatent:
 
     @classmethod
     def IS_CHANGED(cls, **kwargs):
-        import sys
         # Only check DazzleCommand state if dazzle_signal noodle is connected.
-        # Standalone PBE nodes should not be affected (#56).
+        # Standalone PBE nodes are not affected (#56).
+        # Reads per-node active_state from signal (#5).
         dazzle_signal = kwargs.get('dazzle_signal')
-        if dazzle_signal is not None:
-            # Prefer per-node state from signal (schema v2+), fall back to global (#5)
-            if isinstance(dazzle_signal, dict) and 'active_state' in dazzle_signal:
-                return f"dazzle:{dazzle_signal['active_state']}"
-            cmd_state = getattr(sys, '_dazzle_command_state', None)
-            if cmd_state:
-                state = cmd_state.get('state', '')
-                return f"dazzle:{state}"
+        if dazzle_signal is not None and isinstance(dazzle_signal, dict):
+            state = dazzle_signal.get('active_state', '')
+            return f"dazzle:{state}"
         return ""
 
     def _decode_latent(self, latent: Dict, vae, unique_id: str) -> torch.Tensor:
