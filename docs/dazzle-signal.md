@@ -4,36 +4,50 @@
 
 Preview Bridge Extended accepts an optional `DAZZLE_SIGNAL` input from the [Dazzle Command](https://github.com/DazzleNodes/ComfyUI-DazzleCommand) orchestration node.
 
-The signal dict contains both play and pause configurations (static across toggles):
+The signal dict contains both play and pause configurations plus the active state:
 
 ```python
 {
+    "active_state": "playing",          # or "paused" — per-node state
     "pause_gate_intent": "block",
-    "pause_gate_mode": "auto",       # or "always", "if_empty_mask", "if_empty_editor"
+    "pause_gate_mode": "auto",          # or "always", "if_empty_mask", "if_empty_editor"
     "play_gate_intent": "open",
-    "play_gate_mode": "never",       # or "auto"
+    "play_gate_mode": "never",          # or "auto"
     "pause_seed_intent": "transient",
     "play_seed_intent": "lock",
-    "schema_version": 1,
+    "schema_version": 2,
 }
 ```
 
-## Cache-Transparent Operation
+## Per-Node State
 
-The signal dict is **static** -- it doesn't change between play/pause toggles. The active state is communicated via `sys._dazzle_command_state` side-channel, written by Dazzle Command's JS before prompt generation.
+Each DazzleCommand maintains independent state in a per-node registry
+(`sys._dazzle_command_states`). PBE reads `active_state` from the signal dict
+received via the noodle — each PBE reads only its connected DazzleCommand's state.
+
+Multiple DazzleCommand + PBE pairs in the same workflow operate independently
+(e.g., DC-1=Play + DC-2=Pause).
 
 PBE reads the active state during `apply_dazzle_signal()`:
 
 ```python
-cmd_state = getattr(sys, '_dazzle_command_state', None)
-state = cmd_state.get('state', 'paused')  # 'playing' or 'paused'
+state = dazzle_signal.get('active_state', 'paused')
 ```
 
 Based on the active state, PBE picks the corresponding gate config from the signal dict.
 
 ## IS_CHANGED
 
-PBE's `IS_CHANGED` returns `"dazzle:STATE"` based on the sys side-channel. This forces re-execution when play/pause toggles (PBE must re-evaluate its blocking decision), while allowing SmartResCalc and KSampler to cache.
+PBE's `IS_CHANGED` returns `"dazzle:STATE"` based on the signal's `active_state`.
+This forces re-execution when play/pause toggles (PBE must re-evaluate its blocking
+decision). Standalone PBE nodes (no `dazzle_signal` noodle) return `""` and are
+unaffected by DazzleCommand nodes elsewhere in the workflow.
+
+## Cache-Compatible Previews
+
+PBE uses deterministic preview filenames based on node ID (e.g., `PBE-node1_00001_.png`)
+instead of random temp suffixes. This prevents cache invalidation — downstream nodes
+(KSampler, VAEEncode) correctly cache when PBE's input hasn't changed.
 
 ## Smart Block Selection (auto mode)
 
@@ -51,5 +65,5 @@ When `gate_mode` is `"auto"`, PBE intelligently selects a block mode based on cu
 
 | Node | Min Version | Role |
 |------|------------|------|
-| Dazzle Command | v0.2.0-alpha | Provides DAZZLE_SIGNAL output |
-| Smart Resolution Calculator | v0.11.0 | Seed control integration |
+| Dazzle Command | v0.2.3-alpha | Provides DAZZLE_SIGNAL output with per-node state |
+| Smart Resolution Calculator | v0.11.3 | Seed control with per-node DC lookup |

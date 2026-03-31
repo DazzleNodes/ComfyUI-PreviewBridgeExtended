@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.3-alpha] - 2026-03-30
+
+### Changed
+- **Updated README** -- added cache-compatible previews and multi-DC features, DazzleCommand
+  v0.2.3+ companion version reference
+- **Updated dazzle-signal.md** -- per-node state architecture, schema v2 signal format,
+  deterministic preview filenames, companion version table
+
 ## [0.4.2-alpha] - 2026-03-30
 
 ### Fixed

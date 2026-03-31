@@ -28,7 +28,8 @@ Accepts **LATENT + VAE** input. VAE decodes for preview display while the origin
 - **Mask Restoration**: Persist masks across image changes (never, always, if_same_size)
 - **Smart Blocking**: Block execution based on mask state (never, if_empty_mask, if_empty_editor, always)
 - **Latent Support**: Preview latents with VAE decode, edit noise masks, pass through unmodified
-- **Dazzle Command Integration**: Optional DAZZLE_SIGNAL input for play/pause gate control
+- **Dazzle Command Integration**: Optional DAZZLE_SIGNAL input for play/pause gate control. Multi-DazzleCommand workflows supported — each PBE reads its own connected DC's state
+- **Cache-Compatible Previews**: Deterministic filenames prevent cache invalidation. Downstream nodes (KSampler, VAEEncode) correctly cache when PBE's input hasn't changed
 
 ## Installation
 
@@ -65,7 +66,7 @@ git clone https://github.com/DazzleNodes/ComfyUI-PreviewBridgeExtended.git
 4. Enable `inject_noise_mask` to write the mask back into LATENT output
 
 ### With Dazzle Command
-Connect [Dazzle Command](https://github.com/DazzleNodes/ComfyUI-DazzleCommand)'s signal output to the `dazzle_signal` input. Play/pause toggles control blocking behavior automatically.
+Connect [Dazzle Command](https://github.com/DazzleNodes/ComfyUI-DazzleCommand) (v0.2.3+) signal output to the `dazzle_signal` input. Play/pause toggles control blocking behavior automatically. Multiple DazzleCommand + PBE pairs operate independently in the same workflow.
 
 ## Widget Reference
 
