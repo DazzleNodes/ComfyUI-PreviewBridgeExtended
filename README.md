@@ -87,8 +87,11 @@ This node extends the Preview Bridge concept from [ComfyUI-Impact-Pack](https://
 
 - [Architecture](docs/architecture.md) -- LayerCache system, mask combination, empty detection
 - [Dazzle Command Integration](docs/dazzle-signal.md) -- DAZZLE_SIGNAL protocol, cache-transparent orchestration
+- [ComfyUI cache settings](docs/comfyui-cache-settings.md) -- why a blocked workflow could re-render after you run another workflow, what Preview Bridge Extended changes, and how to tune or turn it off
 
 ## Troubleshooting
+
+**The first stage re-renders again after I unblock.** If you ran a different workflow(or even in scenarios where subgraphs change) while this one was blocked, ComfyUI's default cache can discard its results. Preview Bridge Extended now sets a reachable RAM budget at startup so they survive. The ComfyUI console shows one `ComfyUI cache:` line saying what it set or why it left the defaults alone. Set `DAZZLE_CACHE_RAM_OVERRIDE=0` to keep ComfyUI's behavior. Details: [ComfyUI cache settings](docs/comfyui-cache-settings.md).
 
 Enable verbose debug logging:
 ```bash

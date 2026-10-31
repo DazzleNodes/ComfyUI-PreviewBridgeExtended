@@ -41,6 +41,14 @@ if _is_duplicate_load:
     print(f"[PreviewBridgeExtended]   Fix: Remove one installation (standalone symlink or DazzleNodes submodule).")
 else:
     setattr(sys, _PBE_SENTINEL, os.path.dirname(os.path.abspath(__file__)))
+    # Keep other workflows' cached results across workflow switches, so a
+    # blocked (paused) stage does not re-render after another workflow runs.
+    # Must run at import time: ComfyUI's prompt worker reads its cache
+    # settings after custom nodes load. Applied once per process (shared
+    # sentinel with Dazzle Command); respects any explicit cache flag; opt out
+    # with DAZZLE_CACHE_RAM_OVERRIDE=0. See docs/comfyui-cache-settings.md.
+    from .py.cache_policy import apply as _apply_cache_policy
+    _apply_cache_policy(pack="PreviewBridgeExtended")
 
 from .py import NODE_CLASS_MAPPINGS, NODE_DISPLAY_NAME_MAPPINGS, generate_preview_for_api, get_preview_for_api, prepare_for_editing
 from .version import __version__

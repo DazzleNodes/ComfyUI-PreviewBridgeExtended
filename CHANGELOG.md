@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.4-alpha] - 2026-10-31
+
+### Fixed
+- **A blocked workflow no longer re-renders after you run another workflow.** ComfyUI's default RAM-pressure cache discards every cached result of a workflow as soon as a different workflow starts executing: its default budget for other workflows' results ("until free RAM drops below min(128 GB, all of your RAM)") can never be met on machines with 128 GB of RAM or less. Blocking at Preview Bridge Extended, running anything else, then unblocking therefore re-rendered everything before the gate with identical inputs. At startup Preview Bridge Extended now sets a reachable budget -- other workflows' results are kept until free RAM falls below 20% of total RAM (equivalent to `--cache-ram 10 25.4` on a 128 GB machine) -- and prints one console line saying what it set.
+  - Leaves ComfyUI's settings alone when you pass `--cache-ram` with two values, choose `--cache-classic`, `--high-ram`, `--cache-lru` or `--cache-none`, have less than 32 GB or more than 128 GB of RAM, or run a ComfyUI version whose cache defaults differ from the ones this was written for. With a single `--cache-ram` value, your value is kept and only the second one is added.
+  - Turn it off with the environment variable `DAZZLE_CACHE_RAM_OVERRIDE=0`.
+  - Applied once per ComfyUI process; Dazzle Command carries the same setting and whichever pack loads first applies it.
+  - See [docs/comfyui-cache-settings.md](docs/comfyui-cache-settings.md) for how to tune it.
+
 ## [0.4.3-alpha] - 2026-03-30
 
 ### Changed
