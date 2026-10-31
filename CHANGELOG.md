@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.5-alpha] - 2026-10-31
+
+### Fixed
+- **Installing from the ComfyUI Registry no longer installs development tools.** The Registry package included the repository's `requirements.txt`, which lists only development tools (pytest, pytest-cov, black, flake8, mypy). ComfyUI Manager pip-installs a node's `requirements.txt`, so installing Preview Bridge Extended could add those tools to your ComfyUI environment. The node needs nothing beyond ComfyUI.
+
+### Changed
+- The Registry package now contains only the node and its documentation: a new `.comfyignore` leaves out tests, development scripts and git hooks, CI and editor settings, test runners, the unused `setup.py`, and an old deprecated module (28 of 59 tracked files are packaged). Nothing changes for git clones.
+- `setup.py` now names the project's actual license (GPL-3.0) instead of MIT.
+
 ## [0.4.4-alpha] - 2026-10-31
 
 ### Fixed

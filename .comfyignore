@@ -1,0 +1,26 @@
+# Files kept in git but left out of the ComfyUI Registry package (gitignore syntax,
+# applied on top of .gitignore by `comfy node publish`). The package needs only the
+# node itself: __init__.py, version.py, pyproject.toml, py/, web/, docs/, examples/,
+# README, LICENSE, CHANGELOG.
+
+# development tooling and tests
+tests/
+scripts/
+.github/
+.vscode/
+run_tests.py
+run_tests.sh
+run_tests.bat
+pytest.ini
+.repokit.json
+.ghtraf.json
+
+# Development-only dependency list (pytest, black, flake8, mypy). ComfyUI Manager
+# pip-installs a node's requirements.txt on install, which would put these tools
+# into users' ComfyUI environments. The node needs nothing beyond ComfyUI
+# (pyproject.toml: dependencies = []).
+requirements.txt
+
+# legacy packaging (ComfyUI does not use setup.py) and dead code
+setup.py
+py/*.deprecated
